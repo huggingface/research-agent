@@ -1,0 +1,14 @@
+{
+  "content_fingerprint": "sha256:abeeecbf1965a59de0f3489aea79b86553c8cfd03d3054034acdaed5eeb8f01c",
+  "installed_at": "2026-07-08T12:09:22Z",
+  "installed_commit": "ac0575d668eb1b7be0be039af0211b87627cc132",
+  "installed_path_oid": "5f5194097aab61b61d2313335092234eb0a5531f",
+  "installed_revision": "ac0575d668eb1b7be0be039af0211b87627cc132",
+  "installed_via": "marketplace",
+  "repo_path": "plugins/discover",
+  "repo_ref": "main",
+  "repo_url": "https://github.com/fast-agent-ai/card-packs",
+  "schema_version": 1,
+  "source_origin": "remote",
+  "source_url": "https://raw.githubusercontent.com/fast-agent-ai/card-packs/main/marketplace.json"
+}

@@ -1,0 +1,14 @@
+{
+  "content_fingerprint": "sha256:91ac2cd9d8b650c073aa1cb9595bf92ad655e647280ed4941638cb08baa49967",
+  "installed_at": "2026-07-08T12:09:05Z",
+  "installed_commit": "814c015cd63a727331a45fc2bad15cd0c4ebcde1",
+  "installed_path_oid": "a546321a746da4989862e09dbced008e8dde1654",
+  "installed_revision": "814c015cd63a727331a45fc2bad15cd0c4ebcde1",
+  "installed_via": "marketplace",
+  "repo_path": "skills/hf-space-deployer",
+  "repo_ref": "main",
+  "repo_url": "https://github.com/fast-agent-ai/skills",
+  "schema_version": 1,
+  "source_origin": "remote",
+  "source_url": "https://raw.githubusercontent.com/fast-agent-ai/skills/main/marketplace.json"
+}

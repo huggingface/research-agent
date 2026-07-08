@@ -1,0 +1,18 @@
+default_model: "$system.default"
+git_aware: true
+model_references:
+  system:
+# show the model picker not api key error if no token found
+#    default: codexplan
+    fast: codexspark
+    last_used: codexresponses.gpt-5.5?reasoning=medium
+
+# Default MCP Servers - these appear in the /connect menu
+mcp:
+  targets:
+  - name: openai
+    target: "https://developers.openai.com/mcp"
+  - name: hf
+    target: "https://huggingface.co/mcp"
+  - name: hf_docs_only
+    target: "https://huggingface.co/mcp?bouquet=docs"

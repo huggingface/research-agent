@@ -1,0 +1,14 @@
+schema_version: 1
+name: edit-assistant
+version: 0.1.0
+description: Prompt editing helpers for temporary peeks and assistant-message revision.
+commands:
+  peek:
+    description: Send a message, show the response, then restore chat history
+    input_hint: "<message>"
+    handler: ./peek_command.py:peek
+  edit-last:
+    description: Edit the last assistant message
+    input_hint: ""
+    handler: ./edit_last_command.py:editlast
+    key: "c-x e"

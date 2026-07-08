@@ -1,0 +1,24 @@
+default_model: hf.moonshotai/Kimi-K2-Thinking
+
+logger:
+  type: console
+  level: error
+  truncate_tools: true
+
+mcp:
+  servers:
+    hf:
+      description: Hugging Face MCP server
+      transport: http
+      url: https://huggingface.co/mcp
+      auth:
+        forward: huggingface
+    hf_docs_only:
+      description: Hugging Face MCP server, docs bouquet only
+      transport: http
+      url: https://huggingface.co/mcp?bouquet=docs
+      auth:
+        forward: huggingface
+
+harness_app:
+  entrypoint: research_app:create_app

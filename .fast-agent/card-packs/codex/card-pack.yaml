@@ -1,0 +1,17 @@
+schema_version: 2
+name: codex
+kind: card
+install:
+  agent_cards:
+    - agent-cards/dev.md
+  tool_cards:
+    - tool-cards/ripgrep_spark.md
+  files:
+    - fast-agent.yaml
+    - hooks/ripgrep_readonly_guard.py
+plugins:
+  required:
+    - edit-assistant
+  recommended:
+    - agent-finder
+    - session-html

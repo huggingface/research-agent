@@ -1,4 +1,9 @@
 __pycache__/
+*.py[cod]
 fast-agent-log.jsonl
 research-output/
 research/research-output/
+.fast-agent/sessions/
+.fast-agent/**/__pycache__/
+.fast-agent/.check_for_update_done
+research/.check_for_update_done

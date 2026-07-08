@@ -1,0 +1,14 @@
+{
+  "content_fingerprint": "sha256:276ad10fb6bf6c75d68623f31900d91bd2cc2df07a525caa7b69ff65998e7501",
+  "installed_at": "2026-07-08T12:08:03Z",
+  "installed_commit": "ac0575d668eb1b7be0be039af0211b87627cc132",
+  "installed_path_oid": "506cab8ca017386d9ff468aec7051bccb7249f52",
+  "installed_revision": "ac0575d668eb1b7be0be039af0211b87627cc132",
+  "installed_via": "marketplace",
+  "repo_path": "plugins/edit-assistant",
+  "repo_ref": "main",
+  "repo_url": "https://github.com/fast-agent-ai/card-packs",
+  "schema_version": 1,
+  "source_origin": "remote",
+  "source_url": "https://raw.githubusercontent.com/fast-agent-ai/card-packs/main/marketplace.json"
+}
