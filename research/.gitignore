@@ -1,0 +1,4 @@
+fast-agent.secrets.yaml
+sessions/
+logs/
+*.db
