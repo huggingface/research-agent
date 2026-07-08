@@ -83,8 +83,8 @@ class ResearchHarnessSession:
                 "The workspace was verified before this prompt was sent.",
                 "Write the final report to `output/report.md` unless the user requests another filename.",
                 "When you report a Hugging Face bucket artifact to the user, include both the `hf://` path and the accessible HTTPS URL.",
-                "Convert `hf://buckets/<owner>/<bucket>/<path>` to `https://huggingface.co/buckets/<owner>/<bucket>/blob/main/<path>`.",
-                f"Default report URL: `https://huggingface.co/buckets/{workspace.bucket_id}/blob/main/{workspace.session_id}/output/report.md`",
+                "Convert `hf://buckets/<owner>/<bucket>/<path>` to `https://huggingface.co/buckets/<owner>/<bucket>/tree/<path>`.",
+                f"Default report URL: `https://huggingface.co/buckets/{workspace.bucket_id}/tree/{workspace.session_id}/output/report.md`",
             ]
         )
 
