@@ -34,7 +34,7 @@ from starlette.middleware import Middleware
 from prefab_ui.actions import SetInterval, SetState
 from prefab_ui.actions.mcp import CallTool
 from prefab_ui.app import PrefabApp
-from prefab_ui.components import Badge, Card, CardContent, CardHeader, Column, Heading, If, Loader, Markdown, Muted, Progress, Row, Text
+from prefab_ui.components import Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Code, Column, Dot, Grid, Heading, If, Loader, Markdown, Metric, Muted, Progress, Row, Small, Text
 from prefab_ui.components.control_flow import Else, ForEach
 from prefab_ui.rx import RESULT, Rx, STATE
 
@@ -84,6 +84,20 @@ def http_middleware() -> list[Middleware] | None:
     return [Middleware(cast(Any, HFAuthHeaderMiddleware))]
 
 
+def format_elapsed(seconds: float) -> str:
+    total = max(0, int(seconds))
+    minutes, secs = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def event_snapshot(event: dict[str, Any], *, created_at: float) -> dict[str, Any]:
+    elapsed_seconds = float(event.get("ts") or created_at) - created_at
+    return {**event, "elapsed": format_elapsed(elapsed_seconds)}
+
+
 @dataclass(slots=True)
 class ResearchJob:
     id: str
@@ -112,19 +126,25 @@ class ResearchJob:
         del self.events[:-100]
 
     def snapshot(self) -> dict[str, Any]:
+        now = time()
+        done = self.status in {"completed", "failed"}
+        elapsed_seconds = (self.updated_at if done else now) - self.created_at
+        events = [event_snapshot(event, created_at=self.created_at) for event in self.events]
         return {
             "job_id": self.id,
             "topic": self.topic,
             "status": self.status,
-            "events": list(self.events),
-            "timeline_events": list(self.events[-12:]),
-            "event_count": len(self.events),
-            "activity_progress": 100 if self.status in {"completed", "failed"} else int(((time() - self.created_at) * 12) % 100),
+            "events": events,
+            "timeline_events": events[-12:],
+            "event_count": len(events),
+            "elapsed_seconds": int(max(0, elapsed_seconds)),
+            "elapsed": format_elapsed(elapsed_seconds),
+            "activity_progress": 100 if done else int((elapsed_seconds * 12) % 100),
             "result": self.result,
             "error": self.error,
             "trace_path": self.trace_path,
             "trace_error": self.trace_error,
-            "done": self.status in {"completed", "failed"},
+            "done": done,
         }
 
 
@@ -323,61 +343,81 @@ async def main() -> None:
                         ),
                     ],
                 ):
-                    with Row(justify="between", align="center"):
-                        Heading("🤗 Research Agent")
-                        Badge(STATE.job.status, variant="outline")
-                    Muted(STATE.topic)
-
-                    with Card():
-                        with CardHeader():
-                            Text("Activity")
+                    with Card(css_class="border-blue-200 bg-blue-50/40"):
                         with CardContent():
-                            with If("{{ !job.done }}"):
-                                with Row(gap=3, align="center"):
-                                    Loader(variant="bars", size="sm")
-                                    Badge(STATE.job.status, variant="outline")
-                                    Muted("Working; the number of steps is not known in advance.")
-                            with Else():
-                                with Row(gap=3, align="center"):
-                                    Badge(STATE.job.status, variant="outline")
-                                    Muted("No active work.")
-                            Progress(value=STATE.job.activity_progress, max=100, gradient=True, size="sm")
+                            with Row(justify="between", align="center", gap=4):
+                                with Column(gap=1):
+                                    Heading("🤗 Research Agent")
+                                    Muted(STATE.topic)
+                                with Row(gap=2, align="center"):
+                                    with If("{{ !job.done }}"):
+                                        Loader(variant="dots", size="sm")
+                                    Badge(STATE.job.status, variant="info")
 
-                    with Card():
-                        with CardHeader():
-                            Text("Timeline")
-                            Muted("Showing the latest 12 events; older events roll off the visible list.")
-                        with CardContent():
-                            with ForEach("job.timeline_events") as event:
-                                with Row(gap=2, align="start"):
-                                    Badge(event.kind, variant="outline")
-                                    Text(event.message)
+                    with Grid(columns={"default": 1, "lg": 3}, gap=4):
+                        with Card(css_class="lg:col-span-2"):
+                            with CardHeader():
+                                CardTitle("Timeline")
+                                CardDescription("Latest 12 events; older events roll off the visible list.")
+                            with CardContent():
+                                with Column(gap=2):
+                                    with ForEach("job.timeline_events") as event:
+                                        with Row(gap=3, align="start", css_class="rounded-md border border-border/60 bg-background px-3 py-2"):
+                                            Dot(variant="info", size="sm", css_class="mt-1")
+                                            Small(event.elapsed, code=True, css_class="min-w-12 text-muted-foreground")
+                                            Badge(event.kind, variant="outline")
+                                            Text(event.message, css_class="text-sm leading-5")
+
+                        with Column(gap=4):
+                            with Card():
+                                with CardHeader():
+                                    CardTitle("Activity")
+                                    CardDescription("Open-ended research task")
+                                with CardContent():
+                                    with If("{{ !job.done }}"):
+                                        with Row(gap=3, align="center"):
+                                            Loader(variant="bars", size="sm")
+                                            Muted("Working")
+                                    with Else():
+                                        with Row(gap=3, align="center"):
+                                            Badge(STATE.job.status, variant="outline")
+                                            Muted("No active work")
+                                    Progress(value=STATE.job.activity_progress, max=100, gradient=True, size="sm")
+
+                            with Grid(columns=2, gap=3):
+                                with Card():
+                                    with CardContent():
+                                        Metric(label="Runtime", value=STATE.job.elapsed)
+                                with Card():
+                                    with CardContent():
+                                        Metric(label="Events", value=STATE.job.event_count)
+
+                            with If(STATE.job.trace_path):
+                                with Card():
+                                    with CardHeader():
+                                        CardTitle("Session trace")
+                                    with CardContent():
+                                        Code(STATE.job.trace_path)
+
+                            with If(STATE.job.trace_error):
+                                with Card():
+                                    with CardHeader():
+                                        CardTitle("Trace export")
+                                    with CardContent():
+                                        Text(STATE.job.trace_error, css_class="text-amber-600")
 
                     with If(STATE.job.error):
-                        with Card():
+                        with Card(css_class="border-red-200 bg-red-50/60"):
                             with CardHeader():
-                                Text("Error")
+                                CardTitle("Error")
                             with CardContent():
-                                Text(STATE.job.error, css_class="text-red-600")
-
-                    with If(STATE.job.trace_path):
-                        with Card():
-                            with CardHeader():
-                                Text("Session trace")
-                            with CardContent():
-                                Text(STATE.job.trace_path, css_class="font-mono text-sm")
-
-                    with If(STATE.job.trace_error):
-                        with Card():
-                            with CardHeader():
-                                Text("Trace export")
-                            with CardContent():
-                                Text(STATE.job.trace_error, css_class="text-amber-600")
+                                Text(STATE.job.error, css_class="text-red-700")
 
                     with If(STATE.job.result):
                         with Card():
                             with CardHeader():
-                                Text("Final result")
+                                CardTitle("Final result")
+                                CardDescription("Generated report and summary")
                             with CardContent():
                                 Markdown(STATE.job.result, css_class="whitespace-pre-wrap")
 
