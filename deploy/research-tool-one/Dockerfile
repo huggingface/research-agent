@@ -5,7 +5,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-RUN uv pip install --system --no-cache fast-agent-mcp==0.9.3 huggingface_hub
+RUN uv pip install --system --no-cache fast-agent-mcp==0.9.7 huggingface_hub
 
 COPY --link ./ /app
 RUN mkdir -p /app/.cache/huggingface/xet /app/tmp && \

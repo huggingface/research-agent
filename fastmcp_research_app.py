@@ -28,6 +28,7 @@ from fast_agent.session.trace_export_models import ExportRequest
 from fastmcp import Context as MCPContext
 from fastmcp import FastMCP, FastMCPApp
 from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.huggingface import HuggingFaceTokenVerifier
 from pydantic import AnyHttpUrl, Field
 from starlette.middleware import Middleware
 
@@ -65,8 +66,6 @@ def auth_provider() -> RemoteAuthProvider | None:
     oauth_provider, oauth_scopes, resource_url = get_oauth_config()
     if oauth_provider != "huggingface":
         return None
-
-    from fast_agent.mcp.auth.providers.huggingface import HuggingFaceTokenVerifier
 
     return RemoteAuthProvider(
         token_verifier=HuggingFaceTokenVerifier(),
