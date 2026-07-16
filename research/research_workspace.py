@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Mapping
@@ -30,6 +31,12 @@ class ResearchWorkspace:
     bucket_created: bool
     marker_paths: tuple[str, ...]
     bearer_token: str | None
+
+
+current_research_workspace: ContextVar[ResearchWorkspace | None] = ContextVar(
+    "current_research_workspace",
+    default=None,
+)
 
 
 def ensure_workspace(

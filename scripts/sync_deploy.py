@@ -18,9 +18,19 @@ COPIES = {
         "deploy/research-agent-two/research/app_observability.py",
     ),
     "research/app_ui.py": ("deploy/research-agent-two/research/app_ui.py",),
+    "research/birch_renderer.py": (
+        "deploy/research-agent-two/research/birch_renderer.py",
+    ),
+    "research/activity_hooks.py": (
+        "deploy/research-agent-two/research/activity_hooks.py",
+    ),
+    "research/activity_narrator.py": (
+        "deploy/research-agent-two/research/activity_narrator.py",
+    ),
     "research/fastmcp_server.py": (
         "deploy/research-agent-two/research/fastmcp_server.py",
     ),
+    "research/fast-agent.yaml": ("deploy/research-agent-two/research/fast-agent.yaml",),
     "research/research_app.py": (
         "deploy/research-agent-two/research/research_app.py",
         "deploy/research-tool-one/research_app.py",
@@ -32,7 +42,36 @@ COPIES = {
     "research/research_runner.py": (
         "deploy/research-agent-two/research/research_runner.py",
     ),
+    "research/agent-cards/activity-summarizer.md": (
+        "deploy/research-agent-two/research/agent-cards/activity-summarizer.md",
+    ),
+    "research/agent-cards/birch-html.md": (
+        "deploy/research-agent-two/research/agent-cards/birch-html.md",
+    ),
+    "research/agent-cards/research.md": (
+        "deploy/research-agent-two/research/agent-cards/research.md",
+    ),
 }
+TREES = {
+    "research/skills/birch-html": (
+        "deploy/research-agent-two/research/skills/birch-html",
+    ),
+}
+
+
+def trees_match(source: Path, target: Path) -> bool:
+    if not target.is_dir():
+        return False
+    source_files = {
+        path.relative_to(source) for path in source.rglob("*") if path.is_file()
+    }
+    target_files = {
+        path.relative_to(target) for path in target.rglob("*") if path.is_file()
+    }
+    return source_files == target_files and all(
+        filecmp.cmp(source / path, target / path, shallow=False)
+        for path in source_files
+    )
 
 
 def main() -> int:
@@ -55,6 +94,17 @@ def main() -> int:
             if not args.check:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
+
+    for source_name, target_names in TREES.items():
+        source = ROOT / source_name
+        for target_name in target_names:
+            target = ROOT / target_name
+            if trees_match(source, target):
+                continue
+            stale.append(target_name)
+            if not args.check:
+                shutil.rmtree(target, ignore_errors=True)
+                shutil.copytree(source, target)
 
     if stale:
         action = "Stale" if args.check else "Updated"

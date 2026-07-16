@@ -1,0 +1,4 @@
+extend-exclude = [
+    "research/scratch",
+    "research/skills/birch-html",
+]

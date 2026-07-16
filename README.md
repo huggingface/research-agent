@@ -8,6 +8,9 @@ A small `fast-agent` research home for a Hugging Face research agent.
 - The MCP target `hf` connects to `https://huggingface.co/mcp`.
 - `research/agent-cards/research.md` lets you publish/run the same agent
   declaratively.
+- `research/skills/birch-html/` is a vendored copy of the
+  [Birch HTML skill](https://github.com/evalstate/birch-html/tree/main/skill)
+  used by the report-writing subagent.
 - `research_app.py` is a custom harness app entrypoint. It intercepts opened
   sessions/invocations, derives the user and session id, verifies/creates the
   user's Hugging Face bucket, writes marker files, and injects the working path
@@ -29,6 +32,23 @@ For private Hugging Face MCP or bucket access, authenticate with either:
 export HF_TOKEN=hf_...
 # or: hf auth login
 ```
+
+### Private session archive
+
+Completed, failed, and cancelled jobs always export a local Codex JSONL trace.
+To also archive the raw parent session and Codex trace in a central private
+bucket, set:
+
+```bash
+export RESEARCH_ARCHIVE_HF_URL=hf://buckets/<owner>/<private-bucket>
+export RESEARCH_ARCHIVE_TOKEN=hf_...
+```
+
+Use a dedicated fine-grained token with write access only to the archive
+bucket. The app uses this token only inside the trace archiver: it is not copied
+to `HF_TOKEN`, caller auth, MCP auth, workspace context, prompts, or
+model-visible tools. A missing bucket is created private; an existing public
+bucket is rejected.
 
 ## Run in the TUI
 
@@ -129,6 +149,21 @@ Everything else is an app concern kept outside that path:
 | `app_auth.py` | OAuth at the MCP boundary |
 | `app_observability.py` | Optional timeline and trace hooks |
 | `research_app.py` | Harness interceptor that prepares the user workspace |
+| `activity_hooks.py` | Captures exposed reasoning and tool intent after LLM steps |
+| `activity_narrator.py` | Schedules rolling summaries with the fast model |
+
+### Live activity narrative
+
+The FastMCP App keeps a concise rolling description of the research agent's
+current work. The research AgentCard's `after_llm_call` hook captures the latest
+provider-exposed reasoning, visible response text, and sanitized tool calls.
+`ActivityNarrator` updates the narrative after the first LLM step, every three
+steps, after 30 seconds of pending activity, and on the final response.
+
+Narration runs through the separate no-tools `activity-summarizer` AgentCard
+using `$system.fast` and a distinct Harness session, so it does not block or
+modify the main research tool loop. Each update receives only the previous
+narrative and latest captured LLM batch; tool results are not included.
 
 For an ordinary MCP App call that completes before its tool call returns, use
 `HarnessMCPAdapter.invoke_agent(ctx=...)`; it handles MCP auth, progress, and
@@ -152,6 +187,37 @@ with the same extra installed by the deployment image:
 ```bash
 uv run --project ../fast-agent --with 'fastmcp[apps]' \
   python fastmcp_research_app.py
+```
+
+### Preview the Prefab UI without MCP or OAuth
+
+Render the real `build_research_ui()` component tree with static sample state
+and capture it with local Chrome:
+
+```bash
+uv run --project ../fast-agent --with 'fastmcp[apps]' \
+  python scripts/render_app_preview.py --state all
+```
+
+HTML and PNG files are written under `.artifacts/app-preview/`. Preview mode
+uses Prefab's bundled standalone renderer and disables the app's mount-time MCP
+tool calls, so it requires no server, token, OAuth flow, or network access.
+
+Running jobs can be cancelled from the app header. Cancellation is coordinated
+through an in-memory task registry, matching the single-process Space
+deployment model.
+
+Birch drafts are written under the verified session's `scratch/` directory and
+finalized by `finalize_birch_artifact` in a short-lived Hugging Face Sandbox.
+The renderer mounts only that bucket session at `/workspace`, copies the
+vendored Birch Skill to `/opt/birch`, validates the HTML, and writes the final
+artifact under the same session's `output/` directory.
+
+Check host-compatible dark styling with:
+
+```bash
+uv run --project ../fast-agent --with 'fastmcp[apps]' \
+  python scripts/render_app_preview.py --state running --mode dark
 ```
 
 ## Verify identity and bucket use
@@ -178,3 +244,8 @@ into the prompt and added to request metadata.
 The bucket is not a local mount in the normal MCP path. It is a Hugging Face Hub
 bucket addressed by `hf://...`; the agent must use the Hugging Face MCP tools to
 read/write there.
+
+The production Harness disables model-visible access to the Space host shell and
+filesystem. Relative `scratch/` and `output/` artifact paths always refer to the
+authenticated bucket session; they are never shared directories under
+`/app/research`.

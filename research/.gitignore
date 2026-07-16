@@ -1,4 +1,6 @@
 fast-agent.secrets.yaml
 sessions/
 logs/
+output/
+scratch/
 *.db

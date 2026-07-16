@@ -9,7 +9,7 @@ logger:
 model_references:
   system:
     fast: codexspark
-    last_used: codexresponses.gpt-5.5?reasoning=medium
+    last_used: codexresponses.gpt-5.6-sol?reasoning=medium
     research: kimi26
     html: kimi27
 
@@ -18,16 +18,11 @@ mcp:
     hf:
       description: Hugging Face MCP server
       transport: http
-      url: https://huggingface.co/mcp
+      url: https://huggingface.co/mcp?bouquet=research
+      read_timeout_seconds: 30
+      include_instructions: false
       auth:
         forward: huggingface
-    hf_docs_only:
-      description: Hugging Face MCP server, docs bouquet only
-      transport: http
-      url: https://huggingface.co/mcp?bouquet=docs
-      auth:
-        forward: huggingface
-
 harness_app:
   entrypoint: research_app:create_app
 
@@ -36,5 +31,3 @@ environments:
   local:
     type: local
     cwd: .
-    env:
-      RESEARCH_OUTPUT_DIR: research-output

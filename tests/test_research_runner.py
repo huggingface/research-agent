@@ -1,72 +1,40 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager, contextmanager
+import asyncio
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from fast_agent import AgentAuth
 from research.app_jobs import ResearchJob
 from research.research_runner import ResearchRunner
 
 
-class ResponseSimulator:
-    def text_content(self) -> str:
-        return "finished"
+class BlockingResearchRunner(ResearchRunner):
+    def __init__(self, home: Path) -> None:
+        super().__init__(harness=None, home=home)  # type: ignore[arg-type]
+        self.started = asyncio.Event()
 
-
-class SessionSimulator:
-    def __init__(self) -> None:
-        self.request: Any = None
-
-    async def invoke(self, request: Any) -> ResponseSimulator:
-        self.request = request
-        return ResponseSimulator()
-
-
-class AppSimulator:
-    def __init__(self, session: SessionSimulator) -> None:
-        self.session = session
-        self.open_request: Any = None
-
-    @asynccontextmanager
-    async def open(self, request: Any):
-        self.open_request = request
-        yield self.session
-
-
-class HarnessSimulator:
-    def __init__(self) -> None:
-        self.session = SessionSimulator()
-        self.application = AppSimulator(self.session)
-        self.auth: AgentAuth | None = None
-
-    @contextmanager
-    def request_context(self, *, auth: AgentAuth | None):
-        self.auth = auth
-        yield
-
-    def app(self) -> AppSimulator:
-        return self.application
+    async def invoke(self, job: ResearchJob, auth: None) -> str:
+        self.started.set()
+        await asyncio.Event().wait()
+        return "unreachable"
 
 
 @pytest.mark.asyncio
-async def test_runner_uses_one_explicit_harness_session() -> None:
-    harness = HarnessSimulator()
-    runner = ResearchRunner(harness, Path("."))  # type: ignore[arg-type]
-    auth = AgentAuth.bearer(
-        "token",
-        provider="huggingface",
-        subject="alice",
-    )
-    job = ResearchJob(id="job-1", topic="Research MCP Apps", owner_id="alice")
+async def test_runner_records_cancelled_terminal_state(tmp_path: Path) -> None:
+    runner = BlockingResearchRunner(tmp_path)
+    job = ResearchJob(id="research-test", topic="topic", owner_id="alice")
+    job.status = "running"
+    task = asyncio.create_task(runner.run(job, None))
+    await runner.started.wait()
 
-    result = await runner.invoke(job, auth)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
-    assert result == "finished"
-    assert harness.auth is auth
-    assert harness.application.open_request.session_id == job.id
-    assert harness.session.request.session_id == job.id
-    assert harness.session.request.agent == "research"
-    assert harness.session.request.auth is auth
+    snapshot = job.snapshot()
+    assert snapshot["status"] == "cancelled"
+    assert snapshot["done"]
+    assert not snapshot["cancellable"]
+    assert snapshot["result"] is None
+    assert "cancelled" in snapshot["activity_summary"].lower()

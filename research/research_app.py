@@ -11,9 +11,17 @@ from fast_agent import AgentRequest, AppOpenRequest, HarnessAppContext
 from mcp.types import TextContent
 
 try:
-    from .research_workspace import ResearchWorkspace, ensure_workspace
+    from .research_workspace import (
+        ResearchWorkspace,
+        current_research_workspace,
+        ensure_workspace,
+    )
 except ImportError:  # loaded as top-level module from the fast-agent home
-    from research_workspace import ResearchWorkspace, ensure_workspace
+    from research.research_workspace import (
+        ResearchWorkspace,
+        current_research_workspace,
+        ensure_workspace,
+    )
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Mapping
@@ -58,16 +66,20 @@ class ResearchHarnessSession:
             open_metadata=self._open_metadata,
         )
         forwarded = self._with_bucket_instructions(request, workspace)
-        if workspace.bearer_token is None:
-            return await self._session.invoke(forwarded)
-
-        from fast_agent.mcp.auth.context import request_bearer_token
-
-        token = request_bearer_token.set(workspace.bearer_token)
+        workspace_token = current_research_workspace.set(workspace)
         try:
-            return await self._session.invoke(forwarded)
+            if workspace.bearer_token is None:
+                return await self._session.invoke(forwarded)
+
+            from fast_agent.mcp.auth.context import request_bearer_token
+
+            auth_token = request_bearer_token.set(workspace.bearer_token)
+            try:
+                return await self._session.invoke(forwarded)
+            finally:
+                request_bearer_token.reset(auth_token)
         finally:
-            request_bearer_token.reset(token)
+            current_research_workspace.reset(workspace_token)
 
     def _with_bucket_instructions(
         self, request: AgentRequest, workspace: ResearchWorkspace
@@ -81,7 +93,12 @@ class ResearchHarnessSession:
                 f"- Scratch/workings: `{workspace.scratch}`",
                 f"- Final user-facing outputs: `{workspace.output}`",
                 "The workspace was verified before this prompt was sent.",
-                "Write the final report to `output/report.md` unless the user requests another filename.",
+                f"Hugging Face MCP authentication is verified for `{workspace.username}`.",
+                "The same caller bearer token is forwarded to Hugging Face MCP tool calls.",
+                "If authentication status must be reported, call `hf__hf_whoami`; do not infer it from cached server instructions.",
+                "Write the final Markdown report to the bucket-relative path `output/report.md` unless the user requests another filename.",
+                "That path is inside the verified Hugging Face bucket session, not the server's local filesystem.",
+                "Use Hugging Face filesystem tools for bucket files. Never create `output/`, `scratch/`, or report artifacts in the local working directory.",
                 "When you report a Hugging Face bucket artifact to the user, include both the `hf://` path and the accessible HTTPS URL.",
                 "Convert `hf://buckets/<owner>/<bucket>/<path>` to `https://huggingface.co/buckets/<owner>/<bucket>/tree/<path>`.",
                 f"Default report URL: `https://huggingface.co/buckets/{workspace.bucket_id}/tree/{workspace.session_id}/output/report.md`",

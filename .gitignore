@@ -7,3 +7,4 @@ research/research-output/
 .fast-agent/**/__pycache__/
 .fast-agent/.check_for_update_done
 research/.check_for_update_done
+.artifacts/
