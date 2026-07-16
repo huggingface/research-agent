@@ -24,7 +24,19 @@ show an ongoing timeline of LLM/tool-loop events.
 
 ## Private session archive
 
-Configure these Space settings:
+The preferred Space configuration is a private bucket volume:
+
+```bash
+hf spaces volumes set evalstate/research-agent-two \
+  -v hf://buckets/evalstate/research-sessions-private:/app/research/sessions
+```
+
+FastAgent then writes raw session histories and `research-traces/` Codex exports
+directly to the private bucket. No archive token is present in the application
+environment.
+
+For deployments where a bucket volume is unavailable, configure the fallback
+explicit archiver with these Space settings:
 
 - Variable:
 

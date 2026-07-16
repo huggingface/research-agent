@@ -36,8 +36,18 @@ export HF_TOKEN=hf_...
 ### Private session archive
 
 Completed, failed, and cancelled jobs always export a local Codex JSONL trace.
-To also archive the raw parent session and Codex trace in a central private
-bucket, set:
+On Hugging Face Spaces, prefer mounting a private bucket directly at the
+FastAgent session directory:
+
+```bash
+hf spaces volumes set <owner>/<space> \
+  -v hf://buckets/<owner>/<private-bucket>:/app/research/sessions
+```
+
+This persists the raw sessions and `research-traces/` exports without placing
+any archive token in the application environment.
+
+For deployments without a bucket volume, use the optional explicit archiver:
 
 ```bash
 export RESEARCH_ARCHIVE_HF_URL=hf://buckets/<owner>/<private-bucket>
