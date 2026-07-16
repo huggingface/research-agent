@@ -93,6 +93,67 @@ The server exposes:
 
 - `research` — structured research job, routed through the harness intercept
 
+FastMCP App runs are caller-bound and retained in memory for 24 hours after
+completion. Reopening an old Claude Code chat renders the original run while it
+is retained. After expiry or a server restart, the historical app displays an
+unavailable message and never starts replacement research automatically.
+
+## Read the example
+
+Start with `research/research_runner.py`. Its `invoke()` method is the complete
+fast-agent integration:
+
+```python
+with harness.request_context(auth=auth):
+    async with harness.app().open(
+        AppOpenRequest(session_id=job.id, agent="research")
+    ) as session:
+        response = await session.invoke(
+            AgentRequest.text(
+                job.topic,
+                agent="research",
+                session_id=job.id,
+                auth=auth,
+            )
+        )
+```
+
+Everything else is an app concern kept outside that path:
+
+| File | Responsibility |
+| --- | --- |
+| `fastmcp_server.py` | FastMCP App tools and server wiring |
+| `research_runner.py` | Protocol-neutral Harness invocation |
+| `app_jobs.py` | Replay-safe job handles, ownership, and expiry |
+| `app_ui.py` | Prefab presentation |
+| `app_auth.py` | OAuth at the MCP boundary |
+| `app_observability.py` | Optional timeline and trace hooks |
+| `research_app.py` | Harness interceptor that prepares the user workspace |
+
+For an ordinary MCP App call that completes before its tool call returns, use
+`HarnessMCPAdapter.invoke_agent(ctx=...)`; it handles MCP auth, progress, and
+session translation. This example uses the explicit Harness API because the
+research job continues after `start_research` returns, so it must not retain a
+request-scoped FastMCP `Context`.
+
+## Deployment bundles
+
+Python implementation files in `deploy/` are generated copies. After changing
+canonical sources, update and verify them with:
+
+```bash
+python scripts/sync_deploy.py
+python scripts/sync_deploy.py --check
+```
+
+The experimental app uses FastMCP's optional Apps dependencies. Run it locally
+with the same extra installed by the deployment image:
+
+```bash
+uv run --project ../fast-agent --with 'fastmcp[apps]' \
+  python fastmcp_research_app.py
+```
+
 ## Verify identity and bucket use
 
 The `research_app.py` harness intercept runs before every agent invocation. It

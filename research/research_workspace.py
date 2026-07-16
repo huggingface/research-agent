@@ -10,8 +10,10 @@ from datetime import UTC, datetime
 from typing import Any, Mapping
 
 from huggingface_hub import HfApi, get_token
+from huggingface_hub.errors import BucketNotFoundError
 
 from fast_agent import AgentAuth
+from fast_agent.mcp.server.common import normalize_serve_oauth_provider
 
 
 _SAFE_SEGMENT = re.compile(r"[^A-Za-z0-9._-]+")
@@ -37,6 +39,7 @@ def ensure_workspace(
     open_metadata: Mapping[str, object],
     create_bucket: bool = True,
     write_markers: bool = True,
+    api: HfApi | None = None,
 ) -> ResearchWorkspace:
     """Resolve identity/session, ensure the bucket exists, and write markers."""
     token = _token(auth)
@@ -46,13 +49,15 @@ def ensure_workspace(
     bucket_id = f"{username}/research-agent"
     root = f"hf://buckets/{bucket_id}/{session_id}/"
 
-    api = HfApi()
+    api = api or HfApi()
     bucket_created = False
     try:
         api.bucket_info(bucket_id, token=token)
-    except Exception as exc:
+    except BucketNotFoundError as exc:
         if not create_bucket:
-            raise RuntimeError(f"Bucket {bucket_id!r} is not accessible: {exc}") from exc
+            raise RuntimeError(
+                f"Bucket {bucket_id!r} is not accessible: {exc}"
+            ) from exc
         try:
             api.create_bucket(bucket_id, private=True, exist_ok=True, token=token)
             bucket_created = True
@@ -107,6 +112,11 @@ def ensure_workspace(
 def _token(auth: AgentAuth | None) -> str | None:
     if auth is not None and auth.token:
         return auth.token
+    oauth_provider = normalize_serve_oauth_provider(os.getenv("FAST_AGENT_SERVE_OAUTH"))
+    if oauth_provider == "huggingface":
+        raise RuntimeError(
+            "Hugging Face OAuth is enabled, but this request has no caller token."
+        )
     env_token = os.getenv("HF_TOKEN")
     if env_token:
         return env_token
@@ -133,7 +143,9 @@ def _username(whoami: Mapping[str, Any]) -> str:
     username = safe_segment(whoami.get("name"))
     if username:
         return username
-    raise RuntimeError(f"Hugging Face whoami response did not include a usable name: {dict(whoami)!r}.")
+    raise RuntimeError(
+        f"Hugging Face whoami response did not include a usable name: {dict(whoami)!r}."
+    )
 
 
 def _session_id(

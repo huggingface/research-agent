@@ -22,23 +22,30 @@ loop without custom research-agent changes.
 ## Run
 
 ```bash
-uv run --project ../fast-agent python fastmcp_research_app.py \
+uv run --project ../fast-agent --with 'fastmcp[apps]' \
+  python fastmcp_research_app.py \
   --host 127.0.0.1 \
   --port 8724
-```
-
-For per-request isolation:
-
-```bash
-uv run --project ../fast-agent python fastmcp_research_app.py --session-scope request
 ```
 
 The server exposes:
 
 - a FastMCP App provider named `Research Agent`
-- `open_research` UI entry-point tool
-- `continue_research` app/backend tool
-- a plain `research` MCP tool for clients that do not render MCP Apps yet
+- `research`, the model-visible UI entry point
+- app-only `start_research` and `research_status` backend tools
+
+## Why the runner uses the Harness directly
+
+Short-lived app handlers should normally use
+`HarnessMCPAdapter.invoke_agent(ctx=...)`. It is the smallest bridge from a
+FastMCP request to fast-agent.
+
+This app deliberately returns a job handle before research finishes. A
+background task must not retain the completed tool call's request-scoped
+`MCPContext`, so `start_research` captures `AgentAuth` and
+`research/research_runner.py` opens an explicit Harness session. The runner is
+the protocol-neutral core; job retention, OAuth, tracing, and Prefab rendering
+remain separate.
 
 ## Observability expected
 
@@ -54,26 +61,15 @@ hf/...: completed
 research/agent_loop: completed
 ```
 
-This is sufficient for a basic activity indicator or timeline. Rich structured
-UI state would need one additional mapping layer because MCP progress
-notifications are primarily `(progress, total, message)`.
+The app maps these events into a live timeline and polls the bounded in-memory
+job store for status and final output.
 
 ## Current caveats
 
-- Progress only streams while the MCP tool call is active.
-- Long-running/background research should use explicit job handles or FastMCP
-  tasks rather than relying on one active call.
-- The placeholder UI response is a simple dict. A real Apps UI can project the
-  returned `AgentResponse` into a richer component without changing the agent.
+- Jobs survive app re-renders only while this server process is alive and for
+  24 hours after completion.
+- Reopening an expired historical app shows an unavailable state and does not
+  launch replacement work.
 - The research workspace still requires Hugging Face auth (`HF_TOKEN`, local
   `hf auth login`, or forwarded OAuth/bearer auth) because the existing harness
   wrapper verifies/creates per-user buckets before invoking the LLM.
-
-## Effort estimate
-
-- Basic FastMCP App wrapper: low; this branch is the prototype.
-- Observable LLM/tool loop progress: already wired by `HarnessMCPAdapter`.
-- Polished app UI/timeline: moderate; mostly component rendering and event
-  shaping, not core agent plumbing.
-- Durable async research jobs: moderate; add start/status/result tools or use
-  FastMCP task support.
