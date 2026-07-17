@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -9,6 +10,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Mapping
+from uuid import uuid4
 
 from huggingface_hub import HfApi, get_token
 from huggingface_hub.errors import BucketNotFoundError
@@ -169,10 +171,36 @@ def _session_id(
         open_metadata.get("mcp_session_id"),
     ]
     for candidate in candidates:
-        value = safe_segment(candidate)
+        value = _safe_session_segment(candidate)
         if value:
             return value
-    return "default"
+    # No usable session identity was supplied. Never fall back to a shared
+    # constant ("default") — concurrent runs would collide on one bucket path
+    # and leak one run's report into another's UI. Mint a unique id instead.
+    return f"session-{uuid4().hex}"
+
+
+def _safe_session_segment(value: object) -> str | None:
+    """Sanitize a session id, keeping distinct inputs on distinct segments.
+
+    ``safe_segment`` truncates to 96 chars and maps disallowed characters to
+    ``-``, so two different client-supplied ids can collapse to the same
+    segment. When sanitization loses information, append a short stable hash of
+    the original so the mapping stays collision-resistant (and deterministic, so
+    the same input still resolves to the same workspace across requests).
+    """
+    if value is None:
+        return None
+    raw = str(value).strip().strip("/")
+    if not raw:
+        return None
+    safe = safe_segment(raw)
+    if safe is None:
+        return None
+    if safe != raw:
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]
+        safe = f"{safe[:87].rstrip('.-_')}-{digest}"
+    return safe
 
 
 def safe_segment(value: object) -> str | None:
