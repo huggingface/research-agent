@@ -12,6 +12,7 @@ hf_oauth_scopes:
   - read-mcp
   - write-repos
   - manage-repos
+  - jobs
 ---
 
 # Research Agent Two

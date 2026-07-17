@@ -6,7 +6,7 @@ RUN apt-get update && \
 
 WORKDIR /app
 RUN uv pip install --system --no-cache \
-    fast-agent-mcp==0.9.10 \
+    fast-agent-mcp==0.9.13 \
     'fastmcp[apps]' \
     huggingface_hub
 
