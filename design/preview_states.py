@@ -5,15 +5,21 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-TOPIC = "How many collections does unsloth have?"
+TOPIC = (
+    "Recent papers (2025–2026) that are good candidates for demonstrating "
+    "reproducibility — papers with open code, open datasets, and clear "
+    "experimental setups that can be independently re-run and verified."
+)
 
 _RECENT = [
     {
         "ts": 0,
         "elapsed": "02:58",
         "kind": "Report",
+        "source": "agent/birch-html",
         "message": (
-            "The report writer finished a summary table of collections by category."
+            "Rendered an HTML draft of the findings with a summary table of "
+            "collections by category."
         ),
         "progress": None,
         "total": None,
@@ -22,8 +28,10 @@ _RECENT = [
         "ts": 0,
         "elapsed": "02:56",
         "kind": "Hugging Face",
+        "source": "hf/hf_fs_write",
         "message": (
-            "The agent saved its research notes and source data for verification."
+            "Wrote research notes and the raw API response to disk for later "
+            "verification."
         ),
         "progress": None,
         "total": None,
@@ -34,7 +42,7 @@ _BASE: dict[str, Any] = {
     "job_id": "research-preview",
     "topic": TOPIC,
     "status": "running",
-    "phase": "reporting",
+    "phase": "researching",
     "events": _RECENT,
     "timeline_events": _RECENT,
     "recent_events": _RECENT,
@@ -42,27 +50,49 @@ _BASE: dict[str, Any] = {
         {
             "elapsed": "03:00",
             "kind": "Activity",
-            "message": "birch-html[1]/agent_loop: step 10 (llm)",
+            "message": "research/agent_loop: step 15 (llm)",
+        },
+        {
+            "elapsed": "03:00",
+            "kind": "Activity",
+            "message": "hf/hf_api_list: ok · 35 items · 412ms",
         },
         {
             "elapsed": "02:59",
             "kind": "Activity",
-            "message": "agent/birch-html[1]: working",
+            "message": "hf/hf_fs_write: completed",
+        },
+        {
+            "elapsed": "02:58",
+            "kind": "Activity",
+            "message": "agent/birch-html: rendered report draft",
+        },
+        {
+            "elapsed": "02:57",
+            "kind": "Activity",
+            "message": "research/agent_loop: step 14 (tool)",
+        },
+        {
+            "elapsed": "02:56",
+            "kind": "Activity",
+            "message": "hf/hf_fs_read: completed",
         },
     ],
     "recent_summaries": [
         {
-            "elapsed": "02:31",
+            "elapsed": "02:58",
+            "source": "agent/birch-html",
             "message": (
-                "The public collection list is verified, and the agent is "
-                "checking visibility metadata before finalizing the count."
+                "Rendered an HTML draft of the findings with a summary table "
+                "of collections by category."
             ),
         },
         {
-            "elapsed": "01:54",
+            "elapsed": "02:56",
+            "source": "hf/hf_fs_write",
             "message": (
-                "The organization and collection endpoints are available; "
-                "the agent is comparing their results."
+                "Wrote research notes and the raw API response to disk for "
+                "later verification."
             ),
         },
     ],
@@ -71,11 +101,12 @@ _BASE: dict[str, Any] = {
     "elapsed": "03:00",
     "activity_progress": 44,
     "activity_summary": (
-        "The research findings and Markdown report are complete. "
-        "The HTML report is now being produced."
+        "Reading collection metadata for the unsloth organization and "
+        "cross-checking each collection’s visibility flag so private and "
+        "draft collections are excluded from the final count."
     ),
     "activity_summary_revision": 4,
-    "activity_source": "birch-html[1]/agent_loop",
+    "activity_source": "research/agent_loop",
     "turn_count": 10,
     "result": None,
     "markdown_report": (
@@ -117,8 +148,9 @@ def preview_snapshot(state: str) -> dict[str, Any]:
             turn_count=11,
             activity_progress=100,
             activity_summary=(
-                "Research complete. unsloth has 35 public collections; the "
-                "written summary is ready to review."
+                "Research complete. unsloth has 35 public collections; both "
+                "the written summary and the interactive HTML report are "
+                "ready to review."
             ),
             result=(
                 "## Research complete\n\n"
@@ -148,9 +180,28 @@ def preview_snapshot(state: str) -> dict[str, Any]:
             turn_count=6,
             activity_progress=100,
             activity_summary=(
-                "The collections endpoint remained rate-limited after three "
-                "attempts, so the run stopped before a report was produced."
+                "Request failed — the collections endpoint returned HTTP 429 "
+                "(rate-limited) after three retries. The run stopped before "
+                "a report could be produced."
             ),
+            activity_source="hf/hf_api_list",
+            activity_roll=[
+                {
+                    "elapsed": "03:07",
+                    "kind": "Activity",
+                    "message": "hf/hf_api_list: HTTP 429 (retry 3/3)",
+                },
+                {
+                    "elapsed": "03:07",
+                    "kind": "Activity",
+                    "message": "research/agent_loop: aborted",
+                },
+                {
+                    "elapsed": "03:06",
+                    "kind": "Activity",
+                    "message": "hf/hf_api_list: HTTP 429 (retry 2/3)",
+                },
+            ],
             error="The Hugging Face collections endpoint returned HTTP 429.",
             markdown_report=None,
             markdown_report_uri=None,
@@ -171,9 +222,27 @@ def preview_snapshot(state: str) -> dict[str, Any]:
             turn_count=9,
             activity_progress=100,
             activity_summary=(
-                "Research was cancelled. Partial notes and the session trace "
-                "were kept; no final report was produced."
+                "Research cancelled by the user. Partial notes and the session "
+                "trace collected so far have been kept; no final report was "
+                "produced."
             ),
+            activity_roll=[
+                {
+                    "elapsed": "03:12",
+                    "kind": "Activity",
+                    "message": "research/agent_loop: cancelled by user",
+                },
+                {
+                    "elapsed": "03:11",
+                    "kind": "Activity",
+                    "message": "agent/birch-html: rendered 96kb (draft)",
+                },
+                {
+                    "elapsed": "03:10",
+                    "kind": "Activity",
+                    "message": "hf/hf_fs_write: completed",
+                },
+            ],
             markdown_report=None,
             markdown_report_uri=None,
             html_report_uri=None,

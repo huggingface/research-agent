@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from fast_agent import AgentAuth
 from research.app_artifacts import MARKER, finalize_bucket_html, read_bucket_markdown
 from research.app_jobs import ResearchJob
@@ -122,3 +124,13 @@ def test_markdown_reader_uses_callers_token() -> None:
 
     assert markdown.startswith("# Findings")
     assert api.tokens == ["caller-token", "caller-token"]
+
+
+def test_required_finalizer_rejects_missing_auth(tmp_path: Path) -> None:
+    job = ResearchJob(id="research-123", topic="topic", owner_id="alice")
+
+    with pytest.raises(
+        RuntimeError,
+        match="Caller authentication is required",
+    ):
+        finalize_bucket_html(job, None, tmp_path, required=True)

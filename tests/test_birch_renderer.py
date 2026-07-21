@@ -6,6 +6,7 @@ from research.birch_renderer import (
     _bucket_object_path,
     _claim_finalize_attempt,
     _prepare_html_draft,
+    _render_birch_report,
     _sandbox_environment,
     _workspace_path,
     read_birch_skill_file,
@@ -116,3 +117,54 @@ def test_finalize_attempts_allow_two_corrections_then_stop() -> None:
 
     with pytest.raises(RuntimeError, match="retry limit reached"):
         _claim_finalize_attempt(job)
+
+
+def test_structured_report_renderer_is_bounded_and_escaped() -> None:
+    rendered = _render_birch_report(
+        title="Usage <script>alert(1)</script>",
+        lede="A source-grounded usage summary.",
+        metrics=[{"label": "Calls", "value": "3.66M", "note": "111 days"}],
+        rankings=[
+            {
+                "rank": "1",
+                "label": "openai-mcp",
+                "value": "1.23M",
+                "note": "Top client",
+            }
+        ],
+        findings=[
+            {
+                "title": "Codex emerged",
+                "body": "Usage began in W28 and accelerated in W29.",
+            }
+        ],
+        caveats=["W30 is a partial week."],
+        sources=[
+            {
+                "label": "Dataset",
+                "url": "https://huggingface.co/datasets/evalstate/hf-mcp-logs",
+            }
+        ],
+        markdown_url="https://huggingface.co/buckets/alice/report.md",
+    )
+
+    assert '<main class="page stack"' in rendered
+    assert "<style data-birch-system>__BIRCH_SYSTEM_CSS__</style>" in rendered
+    assert "<script>alert(1)</script>" not in rendered
+    assert "Usage &lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+    assert "https://huggingface.co/datasets/evalstate/hf-mcp-logs" in rendered
+    assert "Complete Markdown report" in rendered
+
+
+def test_structured_report_renderer_rejects_unsafe_source_url() -> None:
+    with pytest.raises(ValueError, match="absolute and trusted"):
+        _render_birch_report(
+            title="Report",
+            lede="Summary",
+            metrics=[{"label": "Calls", "value": "10"}],
+            rankings=[{"rank": "1", "label": "Client", "value": "10"}],
+            findings=[{"title": "Finding", "body": "Body"}],
+            caveats=["Partial period"],
+            sources=[{"label": "Bad", "url": "javascript:alert(1)"}],
+            markdown_url="https://example.com/report.md",
+        )

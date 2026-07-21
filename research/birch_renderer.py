@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import os
 import posixpath
 import shlex
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlparse
 
 from huggingface_hub import HfApi
 
@@ -45,6 +47,227 @@ def read_birch_skill_file(path: str = "SKILL.md") -> str:
     if not resolved.is_file():
         raise FileNotFoundError(f"Birch Skill file does not exist: {relative}")
     return resolved.read_text(encoding="utf-8")
+
+
+def stage_birch_report(
+    title: str,
+    lede: str,
+    metrics: list[dict[str, str]],
+    rankings: list[dict[str, str]],
+    findings: list[dict[str, str]],
+    caveats: list[str],
+    sources: list[dict[str, str]],
+) -> str:
+    """Stage a bounded canonical Birch report in the current workspace.
+
+    Args:
+        title: Findings-first report title.
+        lede: Two or three sentences with scope and strongest takeaway.
+        metrics: Up to six items with ``label``, ``value``, and optional ``note``.
+        rankings: Up to twelve rows with ``rank``, ``label``, ``value``, and
+            optional ``note``.
+        findings: Up to eight items with ``title`` and ``body``.
+        caveats: Up to six concise methodology or interpretation caveats.
+        sources: Up to twelve distinct links with ``label`` and absolute ``url``.
+
+    The output path is fixed to ``scratch/report.html``. Model-provided text is
+    escaped and URLs are validated; arbitrary HTML and paths are not accepted.
+    """
+    workspace = current_research_workspace.get()
+    if workspace is None or workspace.bearer_token is None:
+        raise RuntimeError("No authenticated research workspace is active.")
+
+    draft = _render_birch_report(
+        title=title,
+        lede=lede,
+        metrics=metrics,
+        rankings=rankings,
+        findings=findings,
+        caveats=caveats,
+        sources=sources,
+        markdown_url=(
+            f"https://huggingface.co/buckets/{workspace.bucket_id}/tree/"
+            f"{workspace.session_id}/output/report.md"
+        ),
+    )
+    remote_path = f"{workspace.session_id}/scratch/report.html"
+    HfApi().batch_bucket_files(
+        workspace.bucket_id,
+        add=[(draft.encode("utf-8"), remote_path)],
+        token=workspace.bearer_token,
+    )
+    job = current_research_job.get()
+    if job is not None:
+        job.add_event("Staged canonical Birch HTML draft", kind="Report")
+    return f"Staged {workspace.root}scratch/report.html ({len(draft)} bytes)"
+
+
+def _render_birch_report(
+    *,
+    title: str,
+    lede: str,
+    metrics: list[dict[str, str]],
+    rankings: list[dict[str, str]],
+    findings: list[dict[str, str]],
+    caveats: list[str],
+    sources: list[dict[str, str]],
+    markdown_url: str,
+) -> str:
+    title = _bounded_text(title, "title", 180)
+    lede = _bounded_text(lede, "lede", 900)
+    metrics = _bounded_records(metrics, "metrics", 6)
+    rankings = _bounded_records(rankings, "rankings", 12)
+    findings = _bounded_records(findings, "findings", 8)
+    caveats = [_bounded_text(item, "caveat", 500) for item in _bounded_list(caveats, 6)]
+    sources = _bounded_records(sources, "sources", 12)
+
+    metric_cards = "\n".join(
+        f"""<article class="card stat-card stack" data-gap="xs">
+  <div class="caption">{_field(item, "label", 100)}</div>
+  <div class="stat-value">{_field(item, "value", 100)}</div>
+  {_optional_paragraph(item, "note", "muted", 240)}
+</article>"""
+        for item in metrics
+    )
+    ranking_rows = "\n".join(
+        f"""<tr>
+  <td class="num">{_field(item, "rank", 16)}</td>
+  <td class="entity">{_field(item, "label", 160)}</td>
+  <td class="num">{_field(item, "value", 100)}</td>
+  <td class="note">{_field(item, "note", 240, required=False)}</td>
+</tr>"""
+        for item in rankings
+    )
+    finding_cards = "\n".join(
+        f"""<article class="card stack" data-gap="sm">
+  <h3>{_field(item, "title", 180)}</h3>
+  <p>{_field(item, "body", 900)}</p>
+</article>"""
+        for item in findings
+    )
+    caveat_items = "\n".join(f"<li>{item}</li>" for item in caveats)
+    source_items = [
+        (
+            _field(item, "label", 180),
+            _safe_url(_raw_field(item, "url", required=True)),
+        )
+        for item in sources
+    ]
+    source_items.append(("Complete Markdown report", _safe_url(markdown_url)))
+    deduped_sources = dict((url, label) for label, url in source_items)
+    source_links = "\n".join(
+        f'<li><a href="{html.escape(url, quote=True)}">{label}</a></li>'
+        for url, label in deduped_sources.items()
+    )
+
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title}</title>
+    <style data-birch-system>{BIRCH_STYLE_MARKER}</style>
+  </head>
+  <body>
+    <main class="page stack" data-gap="lg">
+      <header class="stack" data-gap="sm">
+        <div class="eyebrow">Research Dispatch</div>
+        <h1>{title}</h1>
+        <p class="lede">{lede}</p>
+      </header>
+      <section class="section stack" data-gap="lg">
+        <div class="section-head"><div><span class="eyebrow">At a glance</span><h2>Headline metrics</h2></div></div>
+        <div class="auto-grid" style="--grid-min: 180px">{metric_cards}</div>
+      </section>
+      <section class="section stack" data-gap="lg">
+        <div class="section-head"><div><span class="eyebrow">Comparison</span><h2>Leading entities</h2></div></div>
+        <div class="numeric-table-wrap"><table class="numeric-table">
+          <thead><tr><th class="num">Rank</th><th>Entity</th><th class="num">Value</th><th>Context</th></tr></thead>
+          <tbody>{ranking_rows}</tbody>
+        </table></div>
+      </section>
+      <section class="section stack" data-gap="lg">
+        <div class="section-head"><div><span class="eyebrow">Findings</span><h2>What changed</h2></div></div>
+        <div class="auto-grid" style="--grid-min: 300px">{finding_cards}</div>
+      </section>
+      <section class="section stack" data-gap="md">
+        <div class="section-head"><div><span class="eyebrow">Interpretation</span><h2>Caveats and method</h2></div></div>
+        <aside class="callout" data-tone="warning"><ul class="plain-list">{caveat_items}</ul></aside>
+      </section>
+      <section class="section stack" data-gap="md">
+        <div class="section-head"><div><span class="eyebrow">Evidence</span><h2>Sources and detailed data</h2></div></div>
+        <ul class="plain-list">{source_links}</ul>
+      </section>
+    </main>
+  </body>
+</html>
+"""
+
+
+def _bounded_list(items: list[object], maximum: int) -> list[object]:
+    if len(items) > maximum:
+        raise ValueError(f"Expected at most {maximum} items, received {len(items)}")
+    return items
+
+
+def _bounded_records(
+    items: list[dict[str, str]],
+    name: str,
+    maximum: int,
+) -> list[dict[str, str]]:
+    _bounded_list(items, maximum)
+    if not items:
+        raise ValueError(f"{name} must not be empty")
+    return items
+
+
+def _bounded_text(value: str, name: str, maximum: int) -> str:
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"{name} must not be empty")
+    if len(text) > maximum:
+        raise ValueError(f"{name} exceeds {maximum} characters")
+    return html.escape(text)
+
+
+def _raw_field(
+    item: dict[str, str],
+    key: str,
+    *,
+    required: bool,
+) -> str:
+    value = str(item.get(key, "")).strip()
+    if required and not value:
+        raise ValueError(f"Missing required {key!r} field")
+    return value
+
+
+def _field(
+    item: dict[str, str],
+    key: str,
+    maximum: int,
+    *,
+    required: bool = True,
+) -> str:
+    value = _raw_field(item, key, required=required)
+    return _bounded_text(value, key, maximum) if value else ""
+
+
+def _optional_paragraph(
+    item: dict[str, str],
+    key: str,
+    css_class: str,
+    maximum: int,
+) -> str:
+    value = _field(item, key, maximum, required=False)
+    return f'<p class="{css_class}">{value}</p>' if value else ""
+
+
+def _safe_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https", "hf"} or not parsed.netloc:
+        raise ValueError(f"Source URL must be absolute and trusted: {value!r}")
+    return value
 
 
 async def finalize_birch_artifact(

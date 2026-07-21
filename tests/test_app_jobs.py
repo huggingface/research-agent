@@ -155,6 +155,11 @@ def test_snapshot_keeps_only_two_previous_narratives() -> None:
         "Summary 2",
         "Summary 1",
     ]
+    assert snapshot["activity_source_label"] == "research / agent_loop"
+    assert all(
+        item["source_label"] == "research / agent_loop"
+        for item in snapshot["recent_summaries"]
+    )
 
 
 def test_event_count_is_not_limited_by_retained_history() -> None:
@@ -173,3 +178,4 @@ def test_event_count_is_not_limited_by_retained_history() -> None:
     snapshot = job.snapshot()
     assert snapshot["event_count"] == 125
     assert len(snapshot["events"]) == 100
+    assert len(snapshot["activity_roll"]) == 6

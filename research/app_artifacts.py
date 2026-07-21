@@ -37,9 +37,12 @@ def finalize_bucket_html(
     home: Path,
     *,
     api: HfApi | None = None,
+    required: bool = False,
 ) -> tuple[str, str] | None:
     """Finalize a Birch draft without requiring Hugging Face Jobs."""
     if auth is None or not auth.token:
+        if required:
+            raise RuntimeError("Caller authentication is required to publish HTML")
         return None
 
     api = api or HfApi()
@@ -58,12 +61,19 @@ def finalize_bucket_html(
             auth.token,
         )
         if source_path is None:
+            if required:
+                raise FileNotFoundError(f"Birch draft was not staged at {draft_path}")
             return None
 
         html = local.read_text()
         if MARKER not in html:
             _validate_html(html)
             if source_path != output_path:
+                if required:
+                    raise ValueError(
+                        "Birch draft has no stylesheet placeholder and was not "
+                        "previously published"
+                    )
                 return None
             return _artifact_urls(username, job.id)
 

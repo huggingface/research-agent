@@ -43,4 +43,39 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
     assert "updateContext" in payload
     assert "{{ $result.markdown }}" in payload
     assert "sendMessage" in payload
-    assert "Continue in chat" in payload
+    assert "Add to chat" in payload
+    assert "Open report" in payload
+    assert "openLink" in payload
+    assert "Cancel this research run?" in payload
+    assert "Agent events" in payload
+    assert "Hide log" in payload
+    assert "Show log" in payload
+    assert "chevron-up" in payload
+    assert "chevron-down" in payload
+    assert app.to_json()["state"]["event_log_expanded"] is True
+
+
+def test_short_query_does_not_offer_expansion() -> None:
+    snapshot = {
+        "job_id": "research-123",
+        "status": "running",
+        "phase": "researching",
+        "done": False,
+        "events": [],
+        "activity_roll": [],
+        "recent_summaries": [],
+        "activity_summary": "Working.",
+        "activity_source": "research/agent_loop",
+        "event_count": 1,
+        "elapsed": "00:01",
+        "turn_count": 0,
+        "cancellable": True,
+        "markdown_report": None,
+        "html_report_ready": False,
+        "html_report_url": None,
+        "trace_path": None,
+    }
+
+    app = build_research_ui("A short query", snapshot, live=False)
+
+    assert app.to_json()["state"]["query_toggleable"] is False

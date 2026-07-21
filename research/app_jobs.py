@@ -47,6 +47,10 @@ def format_elapsed(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
+def display_activity_source(source: str | None) -> str:
+    return (source or "research/agent_loop").replace("/", " / ")
+
+
 @dataclass(slots=True)
 class ResearchJob:
     id: str
@@ -113,6 +117,7 @@ class ResearchJob:
         summaries = [
             {
                 **summary,
+                "source_label": display_activity_source(summary.get("source")),
                 "elapsed": format_elapsed(
                     float(summary.get("ts") or self.created_at) - self.created_at
                 ),
@@ -129,7 +134,7 @@ class ResearchJob:
             "recent_events": events[-2:],
             "activity_roll": list(
                 reversed(
-                    [event for event in events if event["kind"] == "Activity"][-2:]
+                    [event for event in events if event["kind"] == "Activity"][-6:]
                 )
             ),
             "recent_summaries": list(reversed(summaries[:-1][-2:])),
@@ -140,6 +145,7 @@ class ResearchJob:
             "activity_summary": self.activity_summary,
             "activity_summary_revision": self.activity_summary_revision,
             "activity_source": self.activity_source,
+            "activity_source_label": display_activity_source(self.activity_source),
             "turn_count": self.turn_count,
             "result": self.result,
             "markdown_report": self.markdown_report,
@@ -167,6 +173,7 @@ class ResearchJob:
             {
                 "ts": self.updated_at,
                 "message": summary,
+                "source": self.activity_source,
             }
         )
         del self.activity_summaries[:-10]
@@ -371,6 +378,7 @@ def unavailable_snapshot(job_id: str) -> dict[str, Any]:
         "activity_summary": "This research run is no longer available.",
         "activity_summary_revision": 0,
         "activity_source": "research/agent_loop",
+        "activity_source_label": "research / agent_loop",
         "turn_count": 0,
         "result": None,
         "markdown_report": None,

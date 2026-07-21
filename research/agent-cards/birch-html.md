@@ -8,6 +8,7 @@ skills:
   - skills/birch-html
 function_tools:
   - ../birch_renderer.py:read_birch_skill_file
+  - ../birch_renderer.py:stage_birch_report
 use_history: false
 model: $system.html
 tool_hooks:
@@ -27,6 +28,19 @@ Before calling any Hugging Face tool or drafting HTML:
 4. Follow the canonical template and primitives exactly. Do not recreate Birch
    typography, shells, cards, grids, tables, badges, or colors in local CSS.
 
+Execution contract:
+
+1. Read the required skill, template, one relevant recipe, and
+   `output/report.md`.
+2. Immediately call `stage_birch_report` with a compact structured presentation
+   brief grounded only in that Markdown source.
+3. Return the staged path and stop.
+
+Do not explore datasets, repositories, images, scripts, or chart-generation
+options. Do not call `hf_fs_write`, Jobs, or sandboxes. Do not draft or print
+HTML yourself. The trusted staging tool renders the canonical Birch shell,
+escapes content, validates links, and writes `scratch/report.html`.
+
 You receive researched content, source notes, and an output path from the
 research agent. Produce a complete Birch HTML artifact and save it under the
 provided `output/` bucket path. Use `scratch/` only for temporary drafts or
@@ -45,13 +59,8 @@ Preserve evidence:
 - Preserve caveats and distinctions between verified, author-stated, missing,
   and not-applicable artifacts.
 
-Write the complete draft to `scratch/report.html` with the exact
-`<style data-birch-system>__BIRCH_SYSTEM_CSS__</style>` element, verify that the
-draft was written, and return only the draft path and a concise staging note.
-Do not call Hugging Face Jobs, sandboxes, or a remote finalizer. Do not write
-`output/report.html`. The host application deterministically injects the trusted
-bundled stylesheet and publishes `output/report.html` after the research agent
-returns.
+The host application deterministically injects the trusted bundled stylesheet
+and publishes `output/report.html` after this agent returns.
 
 {{env}}
 {{currentDate}}

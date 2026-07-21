@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
-from prefab_ui.actions import SetInterval, SetState, ShowToast
+from prefab_ui.actions import CloseOverlay, OpenLink, SetInterval, SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool, SendMessage, UpdateContext
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Badge,
     Button,
     Column,
+    Dialog,
     Div,
     Heading,
     If,
@@ -24,110 +26,237 @@ from prefab_ui.rx import RESULT, STATE
 
 BROADSHEET_CSS = """
 .dispatch-app {
-  min-height: 100%;
-  padding: 24px;
+  --dispatch-accent: color-mix(in oklab, var(--warning) 68%, var(--foreground));
+  --dispatch-live: color-mix(in oklab, var(--success) 76%, #4a8a63);
+  --dispatch-panel: color-mix(in oklab, var(--card) 76%, var(--muted));
+  width: 100%;
+  min-height: 760px;
+  display: flex;
+  justify-content: center;
   background: var(--muted);
   color: var(--foreground);
 }
 .dispatch-sheet {
   width: min(100%, 800px);
-  min-height: 760px;
-  margin: 0 auto;
+  height: 760px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--background);
-  box-shadow: 0 12px 36px color-mix(in oklab, var(--foreground) 10%, transparent);
+  box-shadow: 0 3px 12px color-mix(in oklab, var(--foreground) 10%, transparent);
 }
 .dispatch-header {
-  padding: 30px 36px 0;
+  flex: none;
+  padding: 26px 36px 20px;
 }
 .dispatch-kicker,
 .dispatch-section-label,
 .dispatch-time,
 .dispatch-source,
 .dispatch-meta,
-.dispatch-trace {
+.dispatch-log-line,
+.dispatch-query-toggle,
+.dispatch-status {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
+.dispatch-topbar {
+  min-width: 0;
+  align-items: center;
+}
 .dispatch-kicker {
-  color: color-mix(in oklab, var(--foreground) 58%, var(--warning));
+  flex: none;
+  color: var(--dispatch-accent);
   font-size: 11px;
-  letter-spacing: .16em;
+  letter-spacing: .14em;
   text-transform: uppercase;
 }
 .dispatch-controls {
-  flex-wrap: wrap;
+  min-width: 0;
+  margin-left: auto;
+  align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
-.dispatch-confirm {
+.dispatch-stats {
+  min-width: 0;
+  align-items: center;
   color: var(--muted-foreground);
-  font-size: 12px;
+}
+.dispatch-stat {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.dispatch-control-divider {
+  width: 1px;
+  height: 16px;
+  flex: none;
+  background: var(--border);
+}
+.dispatch-status {
+  min-height: 25px;
+  padding: 4px 11px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .03em;
+}
+.dispatch-status-running {
+  background: color-mix(in oklab, var(--warning) 17%, var(--background));
+  color: color-mix(in oklab, var(--warning) 46%, var(--foreground));
+}
+.dispatch-status-complete {
+  background: color-mix(in oklab, var(--warning) 30%, var(--background));
+  color: color-mix(in oklab, var(--warning) 28%, var(--foreground));
+}
+.dispatch-status-failed {
+  border: 1px solid var(--muted-foreground);
+  color: var(--muted-foreground);
+}
+.dispatch-status-cancelled {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.dispatch-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--dispatch-live);
+  animation: dispatch-pulse 1.4s ease-in-out infinite;
+}
+.dispatch-header-separator {
+  margin: 20px 0 18px;
+}
+.dispatch-query-row {
+  min-width: 0;
+  align-items: baseline;
 }
 .dispatch-section-label {
+  flex: none;
   color: var(--muted-foreground);
   font-size: 10px;
-  letter-spacing: .15em;
+  letter-spacing: .14em;
   text-transform: uppercase;
 }
+.dispatch-query-wrap {
+  min-width: 0;
+  flex: 1;
+}
 .dispatch-query {
-  max-width: 28ch;
-  margin-top: 8px;
+  margin: 0;
   font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
-  font-size: clamp(22px, 3.5vw, 34px);
+  font-size: 23px;
   font-weight: 500;
-  line-height: 1.08;
-  letter-spacing: -.025em;
-  text-wrap: balance;
+  line-height: 1.28;
+  letter-spacing: -.012em;
+  text-wrap: pretty;
+}
+.dispatch-query-clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.dispatch-query-toggle {
+  height: auto;
+  min-height: 0;
+  margin-top: 6px;
+  padding: 0;
+  color: var(--dispatch-accent);
+  font-size: 11px;
+  letter-spacing: .06em;
 }
 .dispatch-body {
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
-  padding: 28px 36px 32px;
+  padding: 0 36px;
+  scrollbar-color: var(--muted-foreground) transparent;
+  scrollbar-width: thin;
 }
-.dispatch-current-meta {
+.dispatch-body::-webkit-scrollbar {
+  width: 8px;
+}
+.dispatch-body::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--muted-foreground);
+}
+.dispatch-report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  align-items: baseline;
+  margin-top: 26px;
 }
-.dispatch-run-stats {
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-  color: var(--muted-foreground);
-}
-.dispatch-run-stat {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .035em;
-  text-transform: uppercase;
-}
-.dispatch-activity-roll {
-  margin-top: 15px;
-  padding: 10px 12px;
+.dispatch-report-card {
+  min-width: 0;
+  padding: 18px 14px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: color-mix(in oklab, var(--muted) 55%, transparent);
+  background: var(--card);
 }
-.dispatch-activity-line {
-  gap: 12px;
+.dispatch-report-card-title {
+  margin-top: 10px;
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+.dispatch-report-card-copy {
+  min-height: 42px;
+  margin-top: 10px;
+  color: var(--muted-foreground);
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  font-size: 14px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.dispatch-report-action {
+  width: 100%;
+  margin-top: 14px;
+  color: var(--dispatch-accent);
+}
+.dispatch-log {
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--dispatch-panel);
+}
+.dispatch-log-body {
+  margin-top: 24px;
+}
+.dispatch-log-footer {
+  margin: 0;
+  padding-bottom: 0;
+  border: 0;
+  background: transparent;
+}
+.dispatch-log-line {
   min-width: 0;
   align-items: baseline;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.35;
 }
-.dispatch-activity-line + .dispatch-activity-line {
+.dispatch-log-line + .dispatch-log-line {
   margin-top: 5px;
 }
-.dispatch-activity-message {
+.dispatch-log-message {
   min-width: 0;
   overflow: hidden;
-  color: var(--muted-foreground);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.dispatch-current-block {
+  margin-top: 22px;
+}
+.dispatch-current-meta {
+  align-items: baseline;
 }
 .dispatch-time {
   flex: none;
@@ -136,21 +265,24 @@ BROADSHEET_CSS = """
   font-variant-numeric: tabular-nums;
 }
 .dispatch-source {
-  color: color-mix(in oklab, var(--foreground) 62%, var(--warning));
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dispatch-accent);
   font-size: 11px;
-  letter-spacing: .025em;
+  letter-spacing: .02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dispatch-current {
-  margin-top: 12px;
+  margin-top: 9px;
   align-items: flex-start;
-  gap: 14px;
 }
 .dispatch-current-copy {
-  max-width: 62ch;
+  max-width: 60ch;
   font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
-  font-size: clamp(18px, 2.8vw, 25px);
-  line-height: 1.42;
-  letter-spacing: -.012em;
+  font-size: 22px;
+  line-height: 1.34;
+  letter-spacing: -.005em;
   text-wrap: pretty;
 }
 .dispatch-current-copy > :first-child,
@@ -166,9 +298,10 @@ BROADSHEET_CSS = """
   width: 11px;
   height: 11px;
   flex: none;
-  margin-top: 11px;
+  margin-top: 8px;
   border-radius: 999px;
-  background: var(--success);
+  background: var(--dispatch-live);
+  animation: dispatch-pulse 1.4s ease-in-out infinite;
 }
 .dispatch-live-dot::after {
   content: "";
@@ -180,7 +313,7 @@ BROADSHEET_CSS = """
 }
 .dispatch-rule {
   height: 2px;
-  margin-top: 20px;
+  margin-top: 16px;
   overflow: hidden;
   border-radius: 2px;
   background: var(--border);
@@ -190,112 +323,98 @@ BROADSHEET_CSS = """
   display: block;
   width: 40%;
   height: 100%;
-  background: var(--warning);
-  animation: dispatch-progress 1.6s ease-in-out infinite;
+  background: var(--dispatch-accent);
+  animation: dispatch-progress 1.5s ease-in-out infinite;
 }
-.dispatch-rule-completed { background: var(--success); }
+.dispatch-rule-completed {
+  background: var(--dispatch-accent);
+}
 .dispatch-rule-failed {
   height: 0;
   border-top: 2px dashed var(--muted-foreground);
+  border-radius: 0;
   background: transparent;
 }
-.dispatch-rule-cancelled { background: var(--muted-foreground); }
+.dispatch-rule-cancelled {
+  background: color-mix(in oklab, var(--muted-foreground) 62%, transparent);
+}
 .dispatch-history {
-  margin-top: 24px;
+  margin-top: 26px;
+  padding-bottom: 26px;
 }
 .dispatch-event {
-  gap: 16px;
-  padding: 13px 0;
+  min-width: 0;
+  padding: 12px 0;
   border-top: 1px solid var(--border);
-  opacity: .76;
+  opacity: .72;
 }
 .dispatch-event-copy {
   min-width: 0;
 }
 .dispatch-event-message {
-  margin-top: 4px;
+  margin-top: 3px;
   font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
-  font-size: 14px;
-  line-height: 1.45;
+  font-size: 15px;
+  line-height: 1.5;
   text-wrap: pretty;
 }
-.dispatch-result {
-  margin-top: 28px;
-  padding: 22px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
-}
-.dispatch-report-markdown {
-  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
-  font-size: 16px;
-  line-height: 1.62;
-  text-wrap: pretty;
-}
-.dispatch-result .dispatch-report-markdown h1 {
-  margin: 8px 0 18px;
-  font-size: clamp(25px, 4vw, 32px);
-  font-weight: 500;
-  line-height: 1.12;
-  letter-spacing: -.022em;
-  text-wrap: balance;
-}
-.dispatch-result .dispatch-report-markdown h2 {
-  margin: 30px 0 12px;
-  font-size: clamp(21px, 3vw, 25px);
-  font-weight: 500;
-  line-height: 1.2;
-  letter-spacing: -.012em;
-}
-.dispatch-result .dispatch-report-markdown h3 {
-  margin: 24px 0 10px;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-.dispatch-result .dispatch-report-markdown p,
-.dispatch-result .dispatch-report-markdown li {
-  line-height: 1.62;
-}
-.dispatch-result .dispatch-report-markdown strong {
-  font-weight: 650;
-}
-.dispatch-result .dispatch-report-markdown hr {
-  margin: 26px 0;
-  border-color: var(--border);
-}
-.dispatch-result .dispatch-report-markdown code,
-.dispatch-result .dispatch-report-markdown pre {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-.dispatch-error {
-  margin-top: 20px;
-  color: var(--destructive);
-  font-size: 13px;
+.dispatch-read-confirmation {
+  margin-top: 9px;
+  color: var(--muted-foreground);
+  font-size: 11px;
 }
 .dispatch-footer {
-  min-height: 44px;
-  padding: 10px 36px;
-  gap: 12px;
-  align-items: center;
+  flex: none;
   border-top: 1px solid var(--border);
+}
+.dispatch-footer-log {
+  padding: 8px 36px 0;
+}
+.dispatch-log-toggle {
+  min-height: 24px;
+  align-items: center;
+}
+.dispatch-log-toggle-button {
+  height: auto;
+  min-height: 0;
+  margin-left: auto;
+  padding: 2px 0;
   color: var(--muted-foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: .04em;
+}
+.dispatch-session {
+  min-width: 0;
+  padding: 12px 36px;
+  align-items: center;
 }
 .dispatch-meta {
   flex: none;
+  color: var(--muted-foreground);
   font-size: 11px;
-  letter-spacing: .035em;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: .1em;
   text-transform: uppercase;
 }
 .dispatch-trace {
   min-width: 0;
-  margin-left: auto;
   overflow: hidden;
   color: var(--muted-foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.dispatch-build {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 9px;
+  opacity: .6;
+}
+.dispatch-dialog-actions {
+  margin-top: 8px;
+  justify-content: flex-end;
 }
 @keyframes dispatch-progress {
   from { transform: translateX(-110%); }
@@ -303,35 +422,103 @@ BROADSHEET_CSS = """
 }
 @keyframes dispatch-ring {
   from { transform: scale(1); opacity: .45; }
-  to { transform: scale(2.5); opacity: 0; }
+  to { transform: scale(2.6); opacity: 0; }
 }
-@media (max-width: 640px) {
-  .dispatch-app { padding: 0; }
+@keyframes dispatch-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .4; transform: scale(.78); }
+}
+@media (max-width: 720px) {
   .dispatch-sheet {
-    min-height: 680px;
     border-right: 0;
     border-left: 0;
     border-radius: 0;
     box-shadow: none;
   }
-  .dispatch-header { padding: 24px 22px 0; }
-  .dispatch-body { padding: 24px 22px 28px; }
-  .dispatch-footer {
-    padding: 14px 22px;
+  .dispatch-header {
+    padding: 22px 20px 18px;
+  }
+  .dispatch-topbar,
+  .dispatch-query-row {
+    align-items: flex-start;
+  }
+  .dispatch-topbar {
     flex-wrap: wrap;
   }
-  .dispatch-trace {
+  .dispatch-controls {
     width: 100%;
-    margin-left: 0;
+    margin-top: 12px;
+    justify-content: flex-start;
+  }
+  .dispatch-query-row {
+    flex-direction: column;
+  }
+  .dispatch-query {
+    margin-top: 8px;
+    font-size: 21px;
+  }
+  .dispatch-body {
+    padding: 0 20px;
+  }
+  .dispatch-report-grid {
+    grid-template-columns: 1fr;
+  }
+  .dispatch-log-footer {
+    margin: 0;
+  }
+  .dispatch-footer-log {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+  .dispatch-session {
+    padding: 12px 20px;
+  }
+  .dispatch-event {
+    gap: 12px;
+  }
+  .dispatch-build {
+    display: none;
+  }
+}
+@media (max-width: 460px) {
+  .dispatch-controls {
+    gap: 8px;
+  }
+  .dispatch-stats {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .dispatch-control-divider {
+    display: none;
+  }
+  .dispatch-current-copy {
+    font-size: 20px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .dispatch-live-dot,
   .dispatch-live-dot::after,
+  .dispatch-status-dot,
   .dispatch-rule-running::after {
     animation: none;
   }
 }
 """
+
+
+def _display_source(source: str | None) -> str:
+    return (source or "research/agent_loop").replace("/", " / ")
+
+
+def _ui_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Add display-only fields without mutating the retained job snapshot."""
+    prepared = deepcopy(snapshot)
+    prepared.setdefault(
+        "activity_source_label", _display_source(prepared.get("activity_source"))
+    )
+    for summary in prepared.get("recent_summaries", []):
+        summary.setdefault("source_label", _display_source(summary.get("source")))
+    return prepared
 
 
 def build_research_ui(
@@ -341,6 +528,7 @@ def build_research_ui(
     build_id: str = "dev",
     live: bool = True,
 ) -> PrefabApp:
+    snapshot = _ui_snapshot(snapshot)
     on_mount = None
     if live:
         on_mount = [
@@ -365,15 +553,15 @@ def build_research_ui(
             ),
         ]
 
-    cancel_action = SetState("confirm_cancel", False)
+    cancel_action = CloseOverlay()
     if live:
         cancel_action = CallTool(
             "cancel_research",
             arguments={"job_id": STATE.job_id},
             on_success=[
                 SetState("job", RESULT),
-                SetState("confirm_cancel", False),
                 SetState("cancel_requested", False),
+                CloseOverlay(),
                 ShowToast(
                     "Cancellation requested",
                     description="The active research session is being closed.",
@@ -390,6 +578,28 @@ def build_research_ui(
             ],
         )
 
+    read_report = CallTool(
+        "research_chat_context",
+        arguments={"job_id": STATE.job_id},
+        on_success=[
+            UpdateContext(content=RESULT.markdown),
+            SendMessage(
+                RESULT.message,
+                on_success=SetState("chat_sent", True),
+                on_error=ShowToast(
+                    "This host could not send the chat message.",
+                    variant="error",
+                ),
+            ),
+        ],
+        on_error=ShowToast(
+            "Could not load the Markdown report.",
+            variant="error",
+        ),
+    )
+    if not live:
+        read_report = SetState("chat_sent", True)
+
     with PrefabApp(
         title="Research Dispatch",
         css_class="dispatch-app",
@@ -399,211 +609,284 @@ def build_research_ui(
             "topic": topic,
             "job_id": snapshot["job_id"],
             "poll_ms": "1500",
-            "confirm_cancel": False,
             "cancel_requested": False,
+            "query_expanded": False,
+            "query_toggleable": len(topic) > 90,
+            "event_log_expanded": True,
             "chat_sent": False,
             "app_version": f"build {build_id}",
         },
     ) as ui:
         with Div(css_class="dispatch-sheet", on_mount=on_mount):
             with Column(css_class="dispatch-header", gap=0):
-                with Row(justify="between", align="start", gap=4):
+                with Row(css_class="dispatch-topbar", gap=4):
                     Text("Research Dispatch", css_class="dispatch-kicker")
-                    with Row(css_class="dispatch-controls", gap=2, align="center"):
-                        Badge(STATE.app_version, variant="outline")
+                    with Row(css_class="dispatch-controls", gap=3):
+                        with Row(css_class="dispatch-stats", gap=2):
+                            Text(STATE.job.elapsed, css_class="dispatch-stat")
+                            Text("·", css_class="dispatch-stat")
+                            Text(
+                                "{{ job.event_count + ' events' }}",
+                                css_class="dispatch-stat",
+                            )
+                            Text("·", css_class="dispatch-stat")
+                            Text(
+                                "{{ job.turn_count + ' turns' }}",
+                                css_class="dispatch-stat",
+                            )
+                        Div(css_class="dispatch-control-divider")
+
                         with If(
                             (STATE.job.status == "queued")
-                            | (
-                                (STATE.job.status == "running")
-                                & (STATE.job.phase != "reporting")
-                                & (STATE.job.phase != "wrapping_up")
-                            )
+                            | (STATE.job.status == "running")
+                            | (STATE.job.status == "finalizing")
+                            | (STATE.job.status == "cancelling")
                         ):
-                            Badge("Working", variant="warning")
-                        with If(
-                            (STATE.job.status == "running")
-                            & (STATE.job.phase == "reporting")
-                        ):
-                            Badge("Building report", variant="info")
-                        with If(
-                            (STATE.job.status == "running")
-                            & (STATE.job.phase == "wrapping_up")
-                        ):
-                            Badge("Wrapping up", variant="warning")
-                        with If(STATE.job.status == "finalizing"):
-                            Badge("Finalizing", variant="warning")
+                            with Badge(
+                                css_class=("dispatch-status dispatch-status-running")
+                            ):
+                                Div(css_class="dispatch-status-dot")
+                                Text(
+                                    "{{ job.status == 'cancelling' ? "
+                                    "'Cancelling' : job.status == 'finalizing' ? "
+                                    "'Finalizing' : job.phase == 'reporting' ? "
+                                    "'Building report' : job.phase == 'wrapping_up' ? "
+                                    "'Wrapping up' : 'Working' }}"
+                                )
                         with If(STATE.job.status == "completed"):
-                            Badge("Complete", variant="success")
+                            Badge(
+                                "Complete",
+                                css_class=("dispatch-status dispatch-status-complete"),
+                            )
                         with If(STATE.job.status == "failed"):
-                            Badge("Failed", variant="outline")
-                        with If(STATE.job.status == "cancelled"):
-                            Badge("Cancelled", variant="secondary")
-                        with If(STATE.job.status == "cancelling"):
-                            Badge("Cancelling", variant="warning")
-                        with If(STATE.job.status == "expired"):
-                            Badge("Unavailable", variant="secondary")
-                        with If(STATE.job.cancellable & ~STATE.confirm_cancel):
-                            Button(
-                                "Cancel",
-                                variant="ghost",
-                                size="xs",
-                                onClick=SetState("confirm_cancel", True),
+                            Badge(
+                                "Failed",
+                                variant="outline",
+                                css_class=("dispatch-status dispatch-status-failed"),
                             )
-                        with If(STATE.job.cancellable & STATE.confirm_cancel):
-                            Text("Cancel research?", css_class="dispatch-confirm")
-                            Button(
-                                "Keep running",
-                                variant="ghost",
-                                size="xs",
-                                onClick=SetState("confirm_cancel", False),
-                            )
-                            Button(
-                                "Confirm",
-                                variant="destructive",
-                                size="xs",
-                                disabled=STATE.cancel_requested,
-                                onClick=[
-                                    SetState("cancel_requested", True),
-                                    cancel_action,
-                                ],
+                        with If(
+                            (STATE.job.status == "cancelled")
+                            | (STATE.job.status == "expired")
+                        ):
+                            Badge(
+                                "{{ job.status == 'expired' ? "
+                                "'Unavailable' : 'Cancelled' }}",
+                                css_class=("dispatch-status dispatch-status-cancelled"),
                             )
 
-                Separator(spacing=4)
-                Text("Query", css_class="dispatch-section-label")
-                Heading(STATE.topic, level=1, css_class="dispatch-query")
+                        with If(STATE.job.cancellable):
+                            with Dialog(
+                                title="Cancel this research run?",
+                                description=(
+                                    "The agent will stop where it is. Partial "
+                                    "work and the session trace collected so far "
+                                    "will be kept, but no final report will be "
+                                    "produced."
+                                ),
+                            ):
+                                Button("Cancel", variant="outline", size="sm")
+                                with Row(css_class="dispatch-dialog-actions", gap=2):
+                                    Button(
+                                        "Keep running",
+                                        variant="outline",
+                                        onClick=CloseOverlay(),
+                                    )
+                                    Button(
+                                        "Cancel research",
+                                        variant="destructive",
+                                        disabled=STATE.cancel_requested,
+                                        onClick=[
+                                            SetState("cancel_requested", True),
+                                            cancel_action,
+                                        ],
+                                    )
+
+                Separator(css_class="dispatch-header-separator")
+                with Row(css_class="dispatch-query-row", gap=4):
+                    Text("Query", css_class="dispatch-section-label")
+                    with Div(css_class="dispatch-query-wrap"):
+                        with If(STATE.query_toggleable):
+                            with If(~STATE.query_expanded):
+                                Heading(
+                                    STATE.topic,
+                                    level=1,
+                                    css_class="dispatch-query dispatch-query-clamped",
+                                )
+                                Button(
+                                    "Show full query",
+                                    variant="link",
+                                    size="xs",
+                                    css_class="dispatch-query-toggle",
+                                    onClick=SetState("query_expanded", True),
+                                )
+                            with If(STATE.query_expanded):
+                                Heading(
+                                    STATE.topic,
+                                    level=1,
+                                    css_class="dispatch-query",
+                                )
+                                Button(
+                                    "Show less",
+                                    variant="link",
+                                    size="xs",
+                                    css_class="dispatch-query-toggle",
+                                    onClick=SetState("query_expanded", False),
+                                )
+                        with If(~STATE.query_toggleable):
+                            Heading(
+                                STATE.topic,
+                                level=1,
+                                css_class="dispatch-query",
+                            )
 
             with Div(css_class="dispatch-body"):
-                with Row(css_class="dispatch-run-stats"):
-                    Text(
-                        "{{ 'Runtime ' + job.elapsed }}",
-                        css_class="dispatch-run-stat",
-                    )
-                    Text("·", css_class="dispatch-run-stat")
-                    Text(
-                        "{{ job.event_count + ' events' }}",
-                        css_class="dispatch-run-stat",
-                    )
-                    Text("·", css_class="dispatch-run-stat")
-                    Text(
-                        "{{ job.turn_count + ' agent turns' }}",
-                        css_class="dispatch-run-stat",
-                    )
+                with If(
+                    (STATE.job.phase == "reporting")
+                    | (STATE.job.phase == "wrapping_up")
+                    | (STATE.job.status == "finalizing")
+                    | (STATE.job.status == "completed")
+                ):
+                    with Div(css_class="dispatch-report-grid"):
+                        with Column(css_class="dispatch-report-card", gap=0):
+                            Text("Markdown", css_class="dispatch-section-label")
+                            Text(
+                                "Research summary",
+                                css_class="dispatch-report-card-title",
+                            )
+                            Text(
+                                "A concise written answer with the key figures "
+                                "and sources.",
+                                css_class="dispatch-report-card-copy",
+                            )
+                            Button(
+                                "Add to chat",
+                                variant="outline",
+                                css_class="dispatch-report-action",
+                                disabled=(
+                                    (STATE.job.status != "completed")
+                                    | STATE.chat_sent
+                                    | ~STATE.job.markdown_report
+                                ),
+                                onClick=read_report,
+                            )
+                            with If(STATE.chat_sent):
+                                Text(
+                                    "Added to chat.",
+                                    css_class="dispatch-read-confirmation",
+                                )
+                        with Column(css_class="dispatch-report-card", gap=0):
+                            Text("Interactive", css_class="dispatch-section-label")
+                            Text(
+                                "Full HTML report",
+                                css_class="dispatch-report-card-title",
+                            )
+                            Text(
+                                "Charts, tables and sources — fully embedded "
+                                "and self-contained.",
+                                css_class="dispatch-report-card-copy",
+                            )
+                            Button(
+                                "Open report",
+                                variant="outline",
+                                css_class="dispatch-report-action",
+                                disabled=(
+                                    (STATE.job.status != "completed")
+                                    | ~STATE.job.html_report_ready
+                                ),
+                                onClick=OpenLink(STATE.job.html_report_url),
+                            )
 
-                with If("{{ job.activity_roll.length > 0 }}"):
-                    with Div(css_class="dispatch-activity-roll"):
+                with If("{{ job.done && job.activity_roll.length > 0 }}"):
+                    with Div(css_class="dispatch-log dispatch-log-body"):
                         with ForEach("job.activity_roll") as event:
-                            with Row(css_class="dispatch-activity-line"):
+                            with Row(css_class="dispatch-log-line", gap=3):
                                 Text(event.elapsed, css_class="dispatch-time")
                                 Text(
                                     event.message,
-                                    css_class="dispatch-activity-message",
+                                    css_class="dispatch-log-message",
                                 )
 
-                with Row(css_class="dispatch-current"):
-                    with If("{{ !job.done }}"):
-                        Div(css_class="dispatch-live-dot")
-                    Markdown(
-                        STATE.job.activity_summary,
-                        css_class="dispatch-current-copy",
-                    )
-
-                with If("{{ !job.done }}"):
-                    Div(css_class="dispatch-rule dispatch-rule-running")
-                with If(STATE.job.status == "completed"):
-                    Div(css_class="dispatch-rule dispatch-rule-completed")
-                with If(STATE.job.status == "failed"):
-                    Div(css_class="dispatch-rule dispatch-rule-failed")
-                with If(
-                    (STATE.job.status == "cancelled") | (STATE.job.status == "expired")
-                ):
-                    Div(css_class="dispatch-rule dispatch-rule-cancelled")
-
-                with If(STATE.job.markdown_report):
-                    with Div(css_class="dispatch-result"):
-                        with If(STATE.job.html_report_ready):
-                            with Row(justify="between", align="center", gap=3):
-                                Text(
-                                    "Markdown report",
-                                    css_class="dispatch-section-label",
-                                )
-                                Badge("HTML report produced", variant="success")
-                        with If(
-                            (STATE.job.phase == "reporting")
-                            & ~STATE.job.html_report_ready
-                        ):
-                            Text(
-                                "Markdown report · HTML version in progress",
-                                css_class="dispatch-section-label",
-                            )
-                        with If(
-                            (STATE.job.phase != "reporting")
-                            & (STATE.job.phase != "wrapping_up")
-                            & ~STATE.job.html_report_ready
-                        ):
-                            Text(
-                                "Markdown report",
-                                css_class="dispatch-section-label",
-                            )
-                        Markdown(
-                            STATE.job.markdown_report,
-                            css_class="dispatch-report-markdown",
+                with Div(css_class="dispatch-current-block"):
+                    with Row(css_class="dispatch-current-meta", gap=3):
+                        Text(STATE.job.elapsed, css_class="dispatch-time")
+                        Text(
+                            STATE.job.activity_source_label,
+                            css_class="dispatch-source",
                         )
+                    with Row(css_class="dispatch-current", gap=3):
+                        with If("{{ !job.done }}"):
+                            Div(css_class="dispatch-live-dot")
+                        Markdown(
+                            STATE.job.activity_summary,
+                            css_class="dispatch-current-copy",
+                        )
+
+                    with If("{{ !job.done }}"):
+                        Div(css_class="dispatch-rule dispatch-rule-running")
+                    with If(STATE.job.status == "completed"):
+                        Div(css_class="dispatch-rule dispatch-rule-completed")
+                    with If(STATE.job.status == "failed"):
+                        Div(css_class="dispatch-rule dispatch-rule-failed")
+                    with If(
+                        (STATE.job.status == "cancelled")
+                        | (STATE.job.status == "expired")
+                    ):
+                        Div(css_class="dispatch-rule dispatch-rule-cancelled")
 
                 with If("{{ job.recent_summaries.length > 0 }}"):
                     with Div(css_class="dispatch-history"):
-                        Text("Earlier updates", css_class="dispatch-section-label")
+                        Text("Before this", css_class="dispatch-section-label")
                         with ForEach("job.recent_summaries") as event:
-                            with Row(css_class="dispatch-event", align="start"):
+                            with Row(css_class="dispatch-event", gap=4):
                                 Text(event.elapsed, css_class="dispatch-time")
                                 with Column(css_class="dispatch-event-copy", gap=0):
+                                    Text(
+                                        event.source_label,
+                                        css_class="dispatch-source",
+                                    )
                                     Markdown(
                                         event.message,
                                         css_class="dispatch-event-message",
                                     )
 
-                with If(STATE.job.error):
-                    Text(STATE.job.error, css_class="dispatch-error")
-
-                with If(STATE.job.result & ~STATE.job.markdown_report):
-                    with Div(css_class="dispatch-result"):
-                        Text("Final response", css_class="dispatch-section-label")
-                        Markdown(STATE.job.result)
-
-                with If(
-                    (STATE.job.status == "completed") & ~STATE.chat_sent
-                ):
-                    Button(
-                        "Continue in chat",
-                        variant="outline",
-                        size="sm",
-                        onClick=CallTool(
-                            "research_chat_context",
-                            arguments={"job_id": STATE.job_id},
-                            on_success=[
-                                UpdateContext(content=RESULT.markdown),
-                                SendMessage(
-                                    RESULT.message,
-                                    on_success=SetState("chat_sent", True),
-                                    on_error=ShowToast(
-                                        "This host could not send the chat message.",
-                                        variant="error",
-                                    ),
-                                ),
-                            ],
-                            on_error=ShowToast(
-                                "Could not load the Markdown report.",
-                                variant="error",
-                            ),
-                        ),
-                    )
-                with If(STATE.chat_sent):
+            with Div(css_class="dispatch-footer"):
+                with If("{{ !job.done && job.activity_roll.length > 0 }}"):
+                    with Div(css_class="dispatch-footer-log"):
+                        with Row(css_class="dispatch-log-toggle"):
+                            Text("Agent events", css_class="dispatch-meta")
+                            with If(STATE.event_log_expanded):
+                                Button(
+                                    "Hide log",
+                                    icon="chevron-down",
+                                    variant="link",
+                                    size="xs",
+                                    css_class="dispatch-log-toggle-button",
+                                    onClick=SetState("event_log_expanded", False),
+                                )
+                            with If(~STATE.event_log_expanded):
+                                Button(
+                                    "Show log",
+                                    icon="chevron-up",
+                                    variant="link",
+                                    size="xs",
+                                    css_class="dispatch-log-toggle-button",
+                                    onClick=SetState("event_log_expanded", True),
+                                )
+                        with If(STATE.event_log_expanded):
+                            with Div(css_class="dispatch-log dispatch-log-footer"):
+                                with ForEach("job.activity_roll") as event:
+                                    with Row(css_class="dispatch-log-line", gap=3):
+                                        Text(event.elapsed, css_class="dispatch-time")
+                                        Text(
+                                            event.message,
+                                            css_class="dispatch-log-message",
+                                        )
+                with Row(css_class="dispatch-session", gap=3):
+                    Text("Session", css_class="dispatch-meta")
                     Text(
-                        "Report added to model context and sent to chat.",
-                        css_class="dispatch-meta",
+                        "{{ job.trace_path || 'Trace pending' }}",
+                        css_class="dispatch-trace",
                     )
-
-            with If(STATE.job.trace_path):
-                with Row(css_class="dispatch-footer"):
-                    Text(STATE.job.trace_path, css_class="dispatch-trace")
+                    Text(STATE.app_version, css_class="dispatch-build")
 
     return ui
