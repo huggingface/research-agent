@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -13,12 +14,14 @@ from pydantic import Field
 from prefab_ui.app import PrefabApp
 
 from .app_auth import auth_provider, http_middleware, request_auth
+from .app_artifacts import read_bucket_markdown
 from .app_jobs import (
     ResearchJobStore,
     ResearchTaskRegistry,
     owner_id,
     unavailable_snapshot,
 )
+from .app_renderer import app_build_id, install_versioned_renderer
 from .app_ui import build_research_ui
 from .research_runner import ResearchRunner
 
@@ -42,6 +45,7 @@ def register_research_app(
     app: FastMCPApp,
     jobs: ResearchJobStore,
     runner: ResearchRunner,
+    build_id: str,
 ) -> None:
     """Register one UI entry point and its app-only backend tools."""
     tasks = ResearchTaskRegistry()
@@ -63,7 +67,7 @@ def register_research_app(
             else "local development user"
         )
         job.add_event(f"Workspace access confirmed for {identity}.", kind="Setup")
-        return build_research_ui(topic, job.snapshot())
+        return build_research_ui(topic, job.snapshot(), build_id=build_id)
 
     @app.tool()
     async def start_research(
@@ -100,6 +104,31 @@ def register_research_app(
             tasks.cancel(job_id)
         return result.job.snapshot()
 
+    @app.tool()
+    async def research_chat_context(
+        job_id: str,
+        ctx: MCPContext,
+    ) -> dict[str, str]:
+        auth = request_auth()
+        job = await jobs.get(job_id, owner_id(auth, ctx.session_id))
+        if job is None or job.status != "completed":
+            raise RuntimeError("Research job is not available or complete")
+        markdown = await asyncio.to_thread(read_bucket_markdown, job, auth)
+        context_markdown = (
+            f"{markdown.rstrip()}\n\n---\n\n"
+            f"## Research run metadata\n\n"
+            f"- App build: `{build_id}`\n\n"
+            f"{job.result or ''}"
+        )
+        return {
+            "markdown": context_markdown,
+            "message": (
+                "The research report is complete and has been added to context. "
+                "Please summarize the main findings and include links to the "
+                "source artifacts and generated Markdown and HTML reports."
+            ),
+        }
+
 
 def build_fast_agent() -> FastAgent:
     """Build the production Harness without model-visible host filesystem access."""
@@ -123,11 +152,13 @@ async def main() -> None:
 
     async with fast.harness() as harness:
         enforce_production_isolation(fast)
+        build_id = app_build_id(RESEARCH_HOME)
         app = FastMCPApp("Research Agent")
         register_research_app(
             app,
             jobs=ResearchJobStore(),
             runner=ResearchRunner(harness, RESEARCH_HOME),
+            build_id=build_id,
         )
 
         mcp = FastMCP(
@@ -136,6 +167,12 @@ async def main() -> None:
             instructions="Call `research` to open the live research app.",
         )
         mcp.add_provider(app)
+        install_versioned_renderer(
+            mcp,
+            app_name="Research Agent",
+            tool_name="research",
+            build_id=build_id,
+        )
         await mcp.run_http_async(
             transport=args.transport,
             host=args.host,

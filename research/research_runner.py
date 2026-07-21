@@ -11,6 +11,7 @@ from fast_agent.llm.request_params import RequestParams
 
 from .activity_narrator import ActivityNarrator, current_activity_narrator
 from .app_auth import effective_agent_auth
+from .app_artifacts import finalize_bucket_html
 from .app_jobs import ResearchJob, current_research_job
 from .app_observability import JobProgressHandler, try_export_trace
 
@@ -86,7 +87,8 @@ class ResearchRunner:
         try:
             job.result = await self.invoke(job, auth)
             job.status = "finalizing"
-            job.add_event("Research complete; exporting session trace")
+            job.add_event("Research complete; validating output artifacts")
+            await self._finalize_artifacts(job, auth)
             await try_export_trace(job, self.home)
             job.status = "completed"
             job.phase = "completed"
@@ -109,3 +111,27 @@ class ResearchRunner:
             job.status = "failed"
             job.phase = "failed"
             job.add_event("Research job closed after failure", kind="error")
+
+    async def _finalize_artifacts(
+        self,
+        job: ResearchJob,
+        auth: AgentAuth | None,
+    ) -> None:
+        try:
+            urls = await asyncio.to_thread(
+                finalize_bucket_html,
+                job,
+                auth,
+                self.home,
+            )
+            if urls:
+                job.html_report_uri, job.html_report_url = urls
+                if job.result and urls[0] not in job.result:
+                    job.result += (
+                        f"\n\n**Final HTML artifact:**\n- `{urls[0]}`\n- {urls[1]}"
+                    )
+        except Exception as exc:
+            warning = f"HTML artifact validation failed: {exc}"
+            job.add_event(warning, kind="artifact")
+            if job.result:
+                job.result += f"\n\n> Warning: {warning}"

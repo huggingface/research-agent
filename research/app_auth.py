@@ -45,7 +45,7 @@ def request_auth() -> AgentAuth | None:
 
 
 def effective_agent_auth(auth: AgentAuth | None) -> AgentAuth | None:
-    """Resolve local-development credentials before an AgentInstance is created."""
+    """Use local credentials only when inbound Hugging Face OAuth is disabled."""
     if auth is not None and auth.token:
         return auth
     if (

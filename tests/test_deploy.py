@@ -5,9 +5,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
-BASE_SCOPES = {
+EXPECTED_SCOPES = {
     "inference-api",
     "read-mcp",
+    "jobs",
+    "contribute-repos",
     "write-repos",
     "manage-repos",
 }
@@ -22,11 +24,9 @@ def scopes(readme: Path) -> set[str]:
 
 
 def test_deployments_request_the_approved_scopes() -> None:
-    assert scopes(ROOT / "deploy/research-tool-one/README.md") == BASE_SCOPES
-    assert scopes(ROOT / "deploy/research-agent-two/README.md") == {
-        *BASE_SCOPES,
-        "jobs",
-    }
+    for deployment in ("research-tool-one", "research-agent-two"):
+        readme = ROOT / "deploy" / deployment / "README.md"
+        assert scopes(readme) == EXPECTED_SCOPES
 
 
 def test_deployment_sources_are_synced() -> None:

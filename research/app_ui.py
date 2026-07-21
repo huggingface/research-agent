@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from prefab_ui.actions import SetInterval, SetState, ShowToast
-from prefab_ui.actions.mcp import CallTool
+from prefab_ui.actions.mcp import CallTool, SendMessage, UpdateContext
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Badge,
@@ -73,10 +73,10 @@ BROADSHEET_CSS = """
   text-transform: uppercase;
 }
 .dispatch-query {
-  max-width: 22ch;
+  max-width: 28ch;
   margin-top: 8px;
   font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
-  font-size: clamp(27px, 4.3vw, 40px);
+  font-size: clamp(22px, 3.5vw, 34px);
   font-weight: 500;
   line-height: 1.08;
   letter-spacing: -.025em;
@@ -338,6 +338,7 @@ def build_research_ui(
     topic: str,
     snapshot: dict[str, Any],
     *,
+    build_id: str = "dev",
     live: bool = True,
 ) -> PrefabApp:
     on_mount = None
@@ -400,6 +401,8 @@ def build_research_ui(
             "poll_ms": "1500",
             "confirm_cancel": False,
             "cancel_requested": False,
+            "chat_sent": False,
+            "app_version": f"build {build_id}",
         },
     ) as ui:
         with Div(css_class="dispatch-sheet", on_mount=on_mount):
@@ -407,6 +410,7 @@ def build_research_ui(
                 with Row(justify="between", align="start", gap=4):
                     Text("Research Dispatch", css_class="dispatch-kicker")
                     with Row(css_class="dispatch-controls", gap=2, align="center"):
+                        Badge(STATE.app_version, variant="outline")
                         with If(
                             (STATE.job.status == "queued")
                             | (
@@ -564,6 +568,39 @@ def build_research_ui(
                     with Div(css_class="dispatch-result"):
                         Text("Final response", css_class="dispatch-section-label")
                         Markdown(STATE.job.result)
+
+                with If(
+                    (STATE.job.status == "completed") & ~STATE.chat_sent
+                ):
+                    Button(
+                        "Continue in chat",
+                        variant="outline",
+                        size="sm",
+                        onClick=CallTool(
+                            "research_chat_context",
+                            arguments={"job_id": STATE.job_id},
+                            on_success=[
+                                UpdateContext(content=RESULT.markdown),
+                                SendMessage(
+                                    RESULT.message,
+                                    on_success=SetState("chat_sent", True),
+                                    on_error=ShowToast(
+                                        "This host could not send the chat message.",
+                                        variant="error",
+                                    ),
+                                ),
+                            ],
+                            on_error=ShowToast(
+                                "Could not load the Markdown report.",
+                                variant="error",
+                            ),
+                        ),
+                    )
+                with If(STATE.chat_sent):
+                    Text(
+                        "Report added to model context and sent to chat.",
+                        css_class="dispatch-meta",
+                    )
 
             with If(STATE.job.trace_path):
                 with Row(css_class="dispatch-footer"):

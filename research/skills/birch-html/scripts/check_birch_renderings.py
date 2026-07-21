@@ -802,9 +802,18 @@ def contract_findings(candidate: Path, stats: PageStats, system_defined_vars: se
         check("viewport", stats.viewport, "viewport meta present", "missing viewport meta"),
         check(
             "uses_birch_system_css",
-            stats.birch_css_embedded or "styles/birch-system.css" in stats.stylesheet_links,
+            "__BIRCH_SYSTEM_CSS__" not in html
+            and (
+                stats.birch_css_embedded
+                or "styles/birch-system.css" in stats.stylesheet_links
+            ),
             "embeds or links Birch system CSS",
-            f"stylesheet links: {stats.stylesheet_links}; embedded={stats.birch_css_embedded}",
+            (
+                "unreplaced __BIRCH_SYSTEM_CSS__ placeholder"
+                if "__BIRCH_SYSTEM_CSS__" in html
+                else f"stylesheet links: {stats.stylesheet_links}; "
+                f"embedded={stats.birch_css_embedded}"
+            ),
         ),
         check(
             "has_page_shell",
@@ -1129,7 +1138,7 @@ def capture(browser: str, html: Path, out: Path, *, width: int, height: int, del
 
 def screenshot_metrics(original: Path, candidate: Path) -> dict[str, object] | None:
     try:
-        from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageStat
+        from PIL import Image, ImageChops, ImageEnhance, ImageStat
     except Exception:
         return None
     if not original.exists() or not candidate.exists():
@@ -1404,6 +1413,21 @@ window.addEventListener('load', function () {
     }
   });
 
+  var proseCardSqueeze = [];
+  document.querySelectorAll('.auto-grid > .card').forEach(function (card) {
+    var r = card.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return;
+    var compact = (card.textContent || '').replace(/\s+/g, ' ').trim();
+    if (r.width < 280 && compact.length >= 400) {
+      proseCardSqueeze.push({
+        selector: path(card),
+        text: text(card),
+        width: Math.round(r.width),
+        characters: compact.length
+      });
+    }
+  });
+
   var sectionRailOrder = [];
   document.querySelectorAll('.section-rail').forEach(function (rail) {
     var children = Array.prototype.filter.call(rail.children, function (el) {
@@ -1652,6 +1676,7 @@ window.addEventListener('load', function () {
     overflow: overflow,
     containerOverflow: containerOverflow,
     statCardSqueeze: statCardSqueeze,
+    proseCardSqueeze: proseCardSqueeze,
     sectionRailOrder: sectionRailOrder,
     pageOverflowX: Math.round(document.documentElement.scrollWidth - document.documentElement.clientWidth),
     timelineProblems: timelineProblems,
@@ -1707,6 +1732,7 @@ def geometry_findings(audit: dict[str, object] | None) -> list[Finding]:
     overflow = audit.get("overflow") or []
     container_overflow = audit.get("containerOverflow") or []
     stat_card_squeeze = audit.get("statCardSqueeze") or []
+    prose_card_squeeze = audit.get("proseCardSqueeze") or []
     section_rail_order = audit.get("sectionRailOrder") or []
     page_overflow_x = int(audit.get("pageOverflowX") or 0)
     timeline_problems = audit.get("timelineProblems") or []
@@ -1765,6 +1791,28 @@ def geometry_findings(audit: dict[str, object] | None) -> list[Finding]:
         )
     elif audit.get("statCardSqueeze") is not None:
         findings.append(Finding("pass", "stat_card_squeeze", "KPI/stat cards have enough horizontal space"))
+
+    if isinstance(prose_card_squeeze, list) and prose_card_squeeze:
+        findings.append(
+            Finding(
+                "fail",
+                "prose_card_squeeze",
+                "; ".join(
+                    f"{item.get('selector')} width={item.get('width')}px "
+                    f"characters={item.get('characters')} text={item.get('text')}"
+                    for item in prose_card_squeeze[:6]
+                    if isinstance(item, dict)
+                ),
+            )
+        )
+    elif audit.get("proseCardSqueeze") is not None:
+        findings.append(
+            Finding(
+                "pass",
+                "prose_card_squeeze",
+                "dense prose cards have enough horizontal space",
+            )
+        )
 
     if isinstance(section_rail_order, list) and section_rail_order:
         findings.append(

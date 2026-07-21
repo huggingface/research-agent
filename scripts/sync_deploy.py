@@ -14,23 +14,35 @@ COPIES = {
     "research/__init__.py": ("deploy/research-agent-two/research/__init__.py",),
     "research/app_jobs.py": ("deploy/research-agent-two/research/app_jobs.py",),
     "research/app_auth.py": ("deploy/research-agent-two/research/app_auth.py",),
-    "research/app_observability.py": (
-        "deploy/research-agent-two/research/app_observability.py",
+    "research/app_artifacts.py": (
+        "deploy/research-agent-two/research/app_artifacts.py",
     ),
-    "research/app_ui.py": ("deploy/research-agent-two/research/app_ui.py",),
-    "research/birch_renderer.py": (
-        "deploy/research-agent-two/research/birch_renderer.py",
-    ),
+    "research/app_renderer.py": ("deploy/research-agent-two/research/app_renderer.py",),
     "research/activity_hooks.py": (
         "deploy/research-agent-two/research/activity_hooks.py",
     ),
     "research/activity_narrator.py": (
         "deploy/research-agent-two/research/activity_narrator.py",
     ),
+    "research/app_observability.py": (
+        "deploy/research-agent-two/research/app_observability.py",
+    ),
+    "research/app_ui.py": ("deploy/research-agent-two/research/app_ui.py",),
     "research/fastmcp_server.py": (
         "deploy/research-agent-two/research/fastmcp_server.py",
     ),
-    "research/fast-agent.yaml": ("deploy/research-agent-two/research/fast-agent.yaml",),
+    "research/agent-cards/birch-html.md": (
+        "deploy/research-agent-two/research/agent-cards/birch-html.md",
+    ),
+    "research/agent-cards/research.md": (
+        "deploy/research-agent-two/research/agent-cards/research.md",
+    ),
+    "research/agent-cards/activity-summarizer.md": (
+        "deploy/research-agent-two/research/agent-cards/activity-summarizer.md",
+    ),
+    "research/fast-agent.yaml": (
+        "deploy/research-agent-two/research/fast-agent.yaml",
+    ),
     "research/research_app.py": (
         "deploy/research-agent-two/research/research_app.py",
         "deploy/research-tool-one/research_app.py",
@@ -42,19 +54,12 @@ COPIES = {
     "research/research_runner.py": (
         "deploy/research-agent-two/research/research_runner.py",
     ),
-    "research/agent-cards/activity-summarizer.md": (
-        "deploy/research-agent-two/research/agent-cards/activity-summarizer.md",
-    ),
-    "research/agent-cards/birch-html.md": (
-        "deploy/research-agent-two/research/agent-cards/birch-html.md",
-    ),
-    "research/agent-cards/research.md": (
-        "deploy/research-agent-two/research/agent-cards/research.md",
-    ),
 }
+
 TREES = {
     "research/skills/birch-html": (
         "deploy/research-agent-two/research/skills/birch-html",
+        "deploy/research-tool-one/skills/birch-html",
     ),
 }
 
