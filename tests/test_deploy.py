@@ -38,3 +38,12 @@ def test_deployment_sources_are_synced() -> None:
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_deployed_birch_card_tools_exist_in_renderer() -> None:
+    deployment = ROOT / "deploy" / "research-agent-two" / "research"
+    card = (deployment / "agent-cards" / "birch-html.md").read_text()
+    renderer = (deployment / "birch_renderer.py").read_text()
+
+    assert "birch_renderer.py:stage_birch_report" in card
+    assert "def stage_birch_report(" in renderer
