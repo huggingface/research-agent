@@ -63,6 +63,61 @@ class MarkdownBucketSimulator:
         local.write_text(self.markdown)
 
 
+class PresentationBucketSimulator:
+    def __init__(self, draft: str) -> None:
+        self.draft = draft
+        self.uploads: list[tuple[bytes, str]] = []
+
+    def whoami(self, *, token: str) -> dict[str, str]:
+        return {"name": "alice"}
+
+    def list_bucket_tree(self, *args: Any, **kwargs: Any) -> list[object]:
+        return []
+
+    def download_bucket_files(
+        self,
+        bucket_id: str,
+        files: list[tuple[str, Path]],
+        **kwargs: Any,
+    ) -> None:
+        remote, local = files[0]
+        if remote.endswith("/report.html"):
+            local.write_text(self.draft)
+        elif remote.endswith("/manifest.json"):
+            local.write_text(
+                """{
+  "schema_version": 1,
+  "stage": "presentation",
+  "attempt": 1,
+  "status": "complete",
+  "entrypoint": "scratch/presentation/attempts/1/report.html",
+  "artifacts": [
+    {
+      "path": "scratch/presentation/attempts/1/report.html",
+      "media_type": "text/html"
+    },
+    {
+      "path": "scratch/presentation/attempts/1/assets/chart.png",
+      "media_type": "image/png"
+    }
+  ]
+}"""
+            )
+        elif remote.endswith("/assets/chart.png"):
+            local.write_bytes(b"\x89PNG\r\n\x1a\nchart")
+        else:
+            raise FileNotFoundError(remote)
+
+    def batch_bucket_files(
+        self,
+        bucket_id: str,
+        *,
+        add: list[tuple[bytes, str]],
+        token: str,
+    ) -> None:
+        self.uploads = add
+
+
 def test_finalizer_injects_css_and_preserves_source_links(tmp_path: Path) -> None:
     css_path = tmp_path / "skills" / "birch-html" / "assets" / "birch-system.css"
     css_path.parent.mkdir(parents=True)
@@ -115,6 +170,37 @@ def test_finalizer_normalizes_generic_marker_style(tmp_path: Path) -> None:
     assert "--accent: #abc" in output
 
 
+def test_finalizer_promotes_declared_presentation_assets(tmp_path: Path) -> None:
+    css_path = tmp_path / "skills" / "birch-html" / "assets" / "birch-system.css"
+    css_path.parent.mkdir(parents=True)
+    css_path.write_text(":root { --accent: #abc; } .page { color: black; }")
+    draft = f"""<!doctype html>
+<html><head><style data-birch-system>{MARKER}</style></head>
+<body><main class="page"><img src="assets/chart.png" alt="Chart"></main></body>
+</html>"""
+    api = PresentationBucketSimulator(draft)
+    job = ResearchJob(id="research-123", topic="topic", owner_id="alice")
+    job.birch_finalize_attempts = 1
+
+    finalize_bucket_html(
+        job,
+        AgentAuth.bearer("token", subject="alice"),
+        tmp_path,
+        api=api,  # type: ignore[arg-type]
+        required=True,
+    )
+
+    paths = [path for _, path in api.uploads]
+    assert paths == [
+        "research-123/output/report.html",
+        "research-123/output/assets/chart.png",
+    ]
+    assert api.uploads[1][0].startswith(b"\x89PNG")
+    finalized = api.uploads[0][0].decode()
+    assert 'src="data:image/png;base64,' in finalized
+    assert 'src="assets/chart.png"' not in finalized
+
+
 def test_markdown_reader_uses_callers_token() -> None:
     api = MarkdownBucketSimulator("# Findings\n\n[Source](https://example.com)")
     job = ResearchJob(id="research-123", topic="topic", owner_id="alice")
@@ -134,3 +220,29 @@ def test_required_finalizer_rejects_missing_auth(tmp_path: Path) -> None:
         match="Caller authentication is required",
     ):
         finalize_bucket_html(job, None, tmp_path, required=True)
+
+
+def test_artifacts_use_readable_workspace_id(tmp_path: Path) -> None:
+    css_path = tmp_path / "skills" / "birch-html" / "assets" / "birch-system.css"
+    css_path.parent.mkdir(parents=True)
+    css_path.write_text(":root { --accent: #abc; }")
+    draft = f"""<!doctype html>
+<html><head><style data-birch-system>{MARKER}</style></head>
+<body><main class="page">Report</main></body></html>"""
+    api = BucketSimulator(draft)
+    job = ResearchJob(
+        id="research-123",
+        topic="topic",
+        owner_id="alice",
+        workspace_id="26-07-21-readable-brief-a123",
+    )
+
+    urls = finalize_bucket_html(
+        job,
+        AgentAuth.bearer("token", subject="alice"),
+        tmp_path,
+        api=api,  # type: ignore[arg-type]
+    )
+
+    assert urls[0].endswith("/26-07-21-readable-brief-a123/output/report.html")
+    assert api.output_path == "26-07-21-readable-brief-a123/output/report.html"

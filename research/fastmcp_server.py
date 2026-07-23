@@ -53,10 +53,25 @@ def register_research_app(
     @app.ui(
         name="research",
         title="🤗 Research Agent",
-        description="Open a live Hugging Face ecosystem research task.",
+        description=(
+            "Start a sourced Research Dispatch run. Provide a specific, "
+            "goal-focused request that states what should be established or "
+            "compared, the relevant timeframe, constraints, and preferred "
+            "authoritative sources."
+        ),
     )
     async def research(
-        topic: Annotated[str, Field(description="Research topic or task")],
+        topic: Annotated[
+            str,
+            Field(
+                description=(
+                    "A self-contained, well-scoped research goal. Include the "
+                    "subject, desired comparison or decision, relevant "
+                    "timeframe, important constraints, and preferred primary "
+                    "sources."
+                )
+            ),
+        ],
         ctx: MCPContext,
     ) -> PrefabApp:
         auth = request_auth()

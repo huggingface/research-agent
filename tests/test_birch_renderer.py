@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 from research.birch_renderer import (
+    SANDBOX_AGENT_CARD,
+    _agent_sandbox_environment,
     _bucket_object_path,
     _claim_finalize_attempt,
     _prepare_html_draft,
@@ -77,6 +79,20 @@ def test_sandbox_mounts_only_the_current_session_as_workspace() -> None:
     )
 
 
+def test_presentation_worker_is_stateless_and_uses_the_same_session_mount() -> None:
+    sandbox = _agent_sandbox_environment(workspace())
+    mount = sandbox._volume_mounts[0]
+
+    assert mount.source == "alice/research-agent"
+    assert mount.path == "research-abc123"
+    assert mount.mount_path == "/workspace"
+    assert not mount.read_only
+    assert sandbox._forward_hf_token
+    assert "use_history: false" in SANDBOX_AGENT_CARD
+    assert "/workspace/scratch/research/manifest.json" in SANDBOX_AGENT_CARD
+    assert "You may generate charts" in SANDBOX_AGENT_CARD
+
+
 def test_prepare_draft_repairs_fences_and_bare_style_marker() -> None:
     prepared = _prepare_html_draft(
         """```html
@@ -123,14 +139,19 @@ def test_structured_report_renderer_is_bounded_and_escaped() -> None:
     rendered = _render_birch_report(
         title="Usage <script>alert(1)</script>",
         lede="A source-grounded usage summary.",
-        metrics=[{"label": "Calls", "value": "3.66M", "note": "111 days"}],
+        metrics=[
+            {"label": "Calls", "value": "3.66M", "note": "111 days"},
+            {"label": "Dataset", "value": "evalstate/hf-mcp-logs"},
+        ],
         rankings=[
             {
                 "rank": "1",
                 "label": "openai-mcp",
                 "value": "1.23M",
                 "note": "Top client",
-            }
+            },
+            {"rank": "2", "label": "claude-code", "value": "735,386"},
+            {"rank": "3", "label": "codex", "value": "303K"},
         ],
         findings=[
             {
@@ -154,6 +175,12 @@ def test_structured_report_renderer_is_bounded_and_escaped() -> None:
     assert "Usage &lt;script&gt;alert(1)&lt;/script&gt;" in rendered
     assert "https://huggingface.co/datasets/evalstate/hf-mcp-logs" in rendered
     assert "Complete Markdown report" in rendered
+    assert '<div class="stat-value">3.66M</div>' in rendered
+    assert '<div class="card-title">evalstate/hf-mcp-logs</div>' in rendered
+    assert '<div class="panel chart-panel stack"' in rendered
+    assert 'style="--value: 100%"' in rendered
+    assert 'style="--value: 60%"' in rendered
+    assert 'style="--value: 25%"' in rendered
 
 
 def test_structured_report_renderer_rejects_unsafe_source_url() -> None:

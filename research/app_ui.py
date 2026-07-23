@@ -147,13 +147,27 @@ BROADSHEET_CSS = """
   min-width: 0;
   flex: 1;
 }
-.dispatch-query {
+.dispatch-headline {
   margin: 0;
   font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
-  font-size: 23px;
+  font-size: clamp(26px, 4vw, 34px);
   font-weight: 500;
-  line-height: 1.28;
-  letter-spacing: -.012em;
+  line-height: 1.12;
+  letter-spacing: -.02em;
+  text-wrap: balance;
+}
+.dispatch-original-label {
+  display: block;
+  margin-top: 16px;
+}
+.dispatch-query {
+  margin: 6px 0 0;
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  color: var(--muted-foreground);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
   text-wrap: pretty;
 }
 .dispatch-query-clamped {
@@ -220,6 +234,25 @@ BROADSHEET_CSS = """
   width: 100%;
   margin-top: 14px;
   color: var(--dispatch-accent);
+}
+.dispatch-markdown-report {
+  margin-top: 16px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.dispatch-markdown-body {
+  margin-top: 14px;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.dispatch-markdown-body > :first-child {
+  margin-top: 0;
+}
+.dispatch-markdown-body > :last-child {
+  margin-bottom: 0;
 }
 .dispatch-log {
   padding: 12px 16px;
@@ -455,7 +488,7 @@ BROADSHEET_CSS = """
   }
   .dispatch-query {
     margin-top: 8px;
-    font-size: 21px;
+    font-size: 14px;
   }
   .dispatch-body {
     padding: 0 20px;
@@ -513,6 +546,8 @@ def _display_source(source: str | None) -> str:
 def _ui_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Add display-only fields without mutating the retained job snapshot."""
     prepared = deepcopy(snapshot)
+    prepared.setdefault("headline", "Starting research agent")
+    prepared.setdefault("workspace_id", None)
     prepared.setdefault(
         "activity_source_label", _display_source(prepared.get("activity_source"))
     )
@@ -702,9 +737,18 @@ def build_research_ui(
                                     )
 
                 Separator(css_class="dispatch-header-separator")
-                with Row(css_class="dispatch-query-row", gap=4):
-                    Text("Query", css_class="dispatch-section-label")
-                    with Div(css_class="dispatch-query-wrap"):
+                with Div(css_class="dispatch-query-wrap"):
+                    Text("Research brief", css_class="dispatch-section-label")
+                    Heading(
+                        STATE.job.headline,
+                        level=1,
+                        css_class="dispatch-headline",
+                    )
+                    Text(
+                        "Original query",
+                        css_class=("dispatch-section-label dispatch-original-label"),
+                    )
+                    with Div():
                         with If(STATE.query_toggleable):
                             with If(~STATE.query_expanded):
                                 Heading(
@@ -794,6 +838,16 @@ def build_research_ui(
                                     | ~STATE.job.html_report_ready
                                 ),
                                 onClick=OpenLink(STATE.job.html_report_url),
+                            )
+                    with If(STATE.job.markdown_report):
+                        with Div(css_class="dispatch-markdown-report"):
+                            Text(
+                                "Markdown report",
+                                css_class="dispatch-section-label",
+                            )
+                            Markdown(
+                                STATE.job.markdown_report,
+                                css_class="dispatch-markdown-body",
                             )
 
                 with If("{{ job.done && job.activity_roll.length > 0 }}"):

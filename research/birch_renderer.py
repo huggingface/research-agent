@@ -7,6 +7,7 @@ import html
 import logging
 import os
 import posixpath
+import re
 import shlex
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
@@ -32,6 +33,44 @@ SANDBOX_SKILL_ROOT = "/opt/birch"
 SANDBOX_WORKSPACE_ROOT = "/workspace"
 BIRCH_STYLE_MARKER = "__BIRCH_SYSTEM_CSS__"
 MAX_FINALIZE_ATTEMPTS = 3
+FAST_AGENT_VERSION = "0.9.20"
+
+SANDBOX_AGENT_CARD = """---
+type: agent
+name: birch-html-worker
+description: Build a polished Birch report from a durable research handoff.
+model: $system.html
+skills: []
+use_history: false
+shell: true
+cwd: /workspace
+---
+You are the presentation stage of a durable, multi-sandbox research workflow.
+
+The mounted /workspace directory is the only artifact boundary. Previous
+sandboxes are gone. Read the research handoff and preserve its evidence.
+
+Before creating the report:
+1. Read /opt/birch/SKILL.md and /opt/birch/resources/template.html.
+2. Read the most relevant recipe or recipes under /opt/birch/recipes/.
+3. Read /workspace/output/report.md.
+4. Read /workspace/scratch/research/manifest.json and any useful declared
+   research data, scripts, notes, or assets.
+
+You may generate charts, diagrams, images, and other browser-safe assets when
+they improve the report. Reuse research assets when suitable, or regenerate
+them from persisted research data. Install libraries inside this sandbox when
+needed. Never depend on /tmp after this invocation.
+
+Write a complete self-contained Birch HTML draft to the exact path supplied in
+the user prompt. Use the trusted __BIRCH_SYSTEM_CSS__ marker and canonical Birch
+classes; do not recreate the design system in custom CSS. Put file assets in
+the attempt's assets/ directory and reference them as relative assets/... URLs.
+Never reference /tmp, /workspace, file://, or ../scratch from HTML.
+
+Write the attempt manifest last, after every artifact is durable. Return only a
+concise completion summary.
+"""
 
 
 def read_birch_skill_file(path: str = "SKILL.md") -> str:
@@ -121,14 +160,8 @@ def _render_birch_report(
     caveats = [_bounded_text(item, "caveat", 500) for item in _bounded_list(caveats, 6)]
     sources = _bounded_records(sources, "sources", 12)
 
-    metric_cards = "\n".join(
-        f"""<article class="card stat-card stack" data-gap="xs">
-  <div class="caption">{_field(item, "label", 100)}</div>
-  <div class="stat-value">{_field(item, "value", 100)}</div>
-  {_optional_paragraph(item, "note", "muted", 240)}
-</article>"""
-        for item in metrics
-    )
+    metric_cards = "\n".join(_metric_card(item) for item in metrics)
+    ranking_chart = _ranking_chart(rankings)
     ranking_rows = "\n".join(
         f"""<tr>
   <td class="num">{_field(item, "rank", 16)}</td>
@@ -177,10 +210,11 @@ def _render_birch_report(
       </header>
       <section class="section stack" data-gap="lg">
         <div class="section-head"><div><span class="eyebrow">At a glance</span><h2>Headline metrics</h2></div></div>
-        <div class="auto-grid" style="--grid-min: 180px">{metric_cards}</div>
+        <div class="auto-grid" style="--grid-min: 220px">{metric_cards}</div>
       </section>
       <section class="section stack" data-gap="lg">
         <div class="section-head"><div><span class="eyebrow">Comparison</span><h2>Leading entities</h2></div></div>
+        {ranking_chart}
         <div class="numeric-table-wrap"><table class="numeric-table">
           <thead><tr><th class="num">Rank</th><th>Entity</th><th class="num">Value</th><th>Context</th></tr></thead>
           <tbody>{ranking_rows}</tbody>
@@ -202,6 +236,62 @@ def _render_birch_report(
   </body>
 </html>
 """
+
+
+def _metric_card(item: dict[str, str]) -> str:
+    raw_value = _raw_field(item, "value", required=True)
+    value_class = "stat-value" if _is_compact_metric(raw_value) else "card-title"
+    return f"""<article class="card stat-card stack" data-gap="xs">
+  <div class="caption">{_field(item, "label", 100)}</div>
+  <div class="{value_class}">{_bounded_text(raw_value, "value", 100)}</div>
+  {_optional_paragraph(item, "note", "muted", 240)}
+</article>"""
+
+
+def _is_compact_metric(value: str) -> bool:
+    """Reserve oversized KPI typography for short numeric values."""
+    return len(value) <= 14 and bool(
+        re.fullmatch(r"[~≈<>+\-]?\s*[$€£¥]?\s*[\d.,]+\s*(?:[%×xKMBTkmbt]|ms|s|m|h|d)?", value)
+    )
+
+
+def _ranking_chart(rankings: list[dict[str, str]]) -> str:
+    parsed = [
+        (item, _parse_numeric_value(_raw_field(item, "value", required=True)))
+        for item in rankings
+    ]
+    comparable = [(item, value) for item, value in parsed if value is not None]
+    if len(comparable) < 3:
+        return ""
+
+    maximum = max(value for _, value in comparable)
+    if maximum <= 0:
+        return ""
+
+    rows = "\n".join(
+        f"""<div class="metric-row">
+  <span class="caption">{_field(item, "label", 160)}</span>
+  <div class="meter"><span style="--value: {max(1, round(value / maximum * 100))}%"></span></div>
+  <code>{_field(item, "value", 100)}</code>
+</div>"""
+        for item, value in comparable
+    )
+    return f"""<div class="panel chart-panel stack" data-gap="md">
+  <div><span class="eyebrow">Relative scale</span><h3>Ranked comparison</h3></div>
+  <div class="metric-list" style="--metric-label: 180px; --metric-value: 88px">{rows}</div>
+  <p class="chart-caption">Bars are normalized to the largest listed value; exact source values appear beside each bar and in the table below.</p>
+</div>"""
+
+
+def _parse_numeric_value(value: str) -> float | None:
+    match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", value)
+    if match is None:
+        return None
+    number = float(match.group().replace(",", ""))
+    suffix = value[match.end() :].lstrip().lower()[:1]
+    multiplier = {"k": 1e3, "m": 1e6, "b": 1e9, "t": 1e12}.get(suffix, 1)
+    result = number * multiplier
+    return result if result >= 0 else None
 
 
 def _bounded_list(items: list[object], maximum: int) -> list[object]:
@@ -268,6 +358,134 @@ def _safe_url(value: str) -> str:
     if parsed.scheme not in {"http", "https", "hf"} or not parsed.netloc:
         raise ValueError(f"Source URL must be absolute and trusted: {value!r}")
     return value
+
+
+async def generate_birch_report(
+    workspace: ResearchWorkspace,
+    *,
+    attempt: int,
+) -> None:
+    """Run a stateless HTML worker in a fresh session-mounted sandbox."""
+    if workspace.bearer_token is None:
+        raise RuntimeError("A Hugging Face token is required for HTML generation.")
+
+    attempt_root = f"scratch/presentation/attempts/{attempt}"
+    report_path = f"{attempt_root}/report.html"
+    manifest_path = f"{attempt_root}/manifest.json"
+    trace_path = f"scratch/traces/html-generator-attempt-{attempt}.atif.json"
+    result_path = f"scratch/traces/html-generator-attempt-{attempt}.history.json"
+    prompt = f"""Build the HTML presentation for this research workspace.
+
+Inputs:
+- /workspace/output/report.md
+- /workspace/scratch/research/manifest.json
+- all artifacts declared by that research manifest
+
+Outputs for attempt {attempt}:
+- /workspace/{report_path}
+- optional assets under /workspace/{attempt_root}/assets/
+- /workspace/{manifest_path}, written last
+
+The presentation manifest must be JSON with this shape:
+{{
+  "schema_version": 1,
+  "stage": "presentation",
+  "attempt": {attempt},
+  "status": "complete",
+  "entrypoint": "{report_path}",
+  "artifacts": [
+    {{"path": "{report_path}", "media_type": "text/html", "role": "report"}}
+  ]
+}}
+
+Declare every generated asset using its workspace-relative path. Generate
+charts when the persisted evidence supports a useful visualization. Pair
+charts with exact values or accessible explanatory text.
+"""
+    if attempt > 1:
+        prompt += f"""
+This is retry attempt {attempt}. Inspect the preceding attempt and its durable
+validation findings under:
+- /workspace/scratch/presentation/attempts/{attempt - 1}/
+
+Correct those findings rather than repeating the same presentation.
+"""
+
+    sandbox = _agent_sandbox_environment(workspace)
+    completed = False
+    try:
+        await _open_sandbox(sandbox)
+        await copy_tree(
+            LocalEnvironment(
+                logger=logging.getLogger(__name__),
+                working_directory=SKILL_ROOT.parent,
+            ),
+            SKILL_ROOT.name,
+            sandbox,
+            SANDBOX_SKILL_ROOT,
+        )
+        await sandbox.write_text("/opt/html-agent.md", SANDBOX_AGENT_CARD)
+        await sandbox.write_text("/opt/html-prompt.md", prompt)
+        await sandbox.write_text(
+            "/opt/fast-agent.yaml",
+            (Path(__file__).parent / "fast-agent.yaml").read_text(),
+        )
+        version = os.getenv("BIRCH_FAST_AGENT_VERSION", FAST_AGENT_VERSION)
+        command = (
+            f"uvx fast-agent-mcp=={shlex.quote(version)} go "
+            "--no-home --config-path /opt/fast-agent.yaml "
+            "--card /opt/html-agent.md --agent birch-html-worker "
+            "--model '$system.html' --shell "
+            "--prompt-file /opt/html-prompt.md "
+            f"--trajectory-output {shlex.quote(_sandbox_path(trace_path))} "
+            f"--results {shlex.quote(_sandbox_path(result_path))} "
+            f"--timeout {int(os.getenv('BIRCH_AGENT_TIMEOUT', '900'))} --quiet"
+        )
+        await _run(
+            sandbox,
+            command,
+            timeout=float(os.getenv("BIRCH_AGENT_TIMEOUT", "900")) + 60,
+        )
+        await _validate(
+            sandbox,
+            _sandbox_path(report_path),
+            report_root=_sandbox_path(f"{attempt_root}/validation"),
+            fail_on_warn=True,
+        )
+        completed = True
+    finally:
+        await asyncio.shield(sandbox.close())
+
+    if completed:
+        await asyncio.gather(
+            _wait_for_bucket_file(workspace, report_path),
+            _wait_for_bucket_file(workspace, manifest_path),
+            _wait_for_bucket_file(workspace, trace_path),
+        )
+
+
+def _agent_sandbox_environment(
+    workspace: ResearchWorkspace,
+) -> HuggingFaceSandboxEnvironment:
+    return HuggingFaceSandboxEnvironment(
+        image=os.getenv(
+            "BIRCH_AGENT_SANDBOX_IMAGE",
+            "ghcr.io/astral-sh/uv:python3.13-bookworm",
+        ),
+        flavor=os.getenv("BIRCH_SANDBOX_FLAVOR", "cpu-basic"),
+        cwd=SANDBOX_WORKSPACE_ROOT,
+        idle_timeout=os.getenv("BIRCH_SANDBOX_IDLE_TIMEOUT", "10m"),
+        token=workspace.bearer_token,
+        forward_hf_token=True,
+        bucket_mounts=(
+            HuggingFaceBucketMount(
+                source=workspace.bucket_id,
+                path=workspace.session_id,
+                mount_path=SANDBOX_WORKSPACE_ROOT,
+                read_only=False,
+            ),
+        ),
+    )
 
 
 async def finalize_birch_artifact(
@@ -512,14 +730,20 @@ async def _run(
 async def _validate(
     sandbox: HuggingFaceSandboxEnvironment,
     artifact: str,
+    *,
+    report_root: str = "/tmp",
+    fail_on_warn: bool = False,
 ) -> None:
+    await _run(sandbox, f"mkdir -p {shlex.quote(report_root)}")
+    fail_flag = " --fail-on-warn" if fail_on_warn else ""
     command = (
         "python "
         f"{shlex.quote(f'{SANDBOX_SKILL_ROOT}/scripts/check_birch_renderings.py')} "
         f"--artifact {shlex.quote(artifact)} --no-capture "
-        "--out /tmp/birch-check.json "
-        "--markdown /tmp/birch-check.md "
-        "--screenshots-dir /tmp/birch-screenshots"
+        f"--out {shlex.quote(f'{report_root}/check.json')} "
+        f"--markdown {shlex.quote(f'{report_root}/check.md')} "
+        f"--screenshots-dir {shlex.quote(f'{report_root}/screenshots')}"
+        f"{fail_flag}"
     )
     execution = await sandbox.execute(
         ShellExecutionRequest(command=command, timeout=120)
@@ -529,7 +753,7 @@ async def _validate(
     if execution.result.exit_code == 0:
         return
     try:
-        report = (await sandbox.read_text("/tmp/birch-check.md")).strip()
+        report = (await sandbox.read_text(f"{report_root}/check.md")).strip()
     except Exception:
         report = execution.result.stderr.strip() or execution.result.stdout.strip()
     raise RuntimeError(f"Birch validation failed:\n{report[:8000]}")

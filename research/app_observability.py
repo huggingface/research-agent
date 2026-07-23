@@ -264,7 +264,7 @@ def export_trace(job: ResearchJob, home: Path) -> None:
     )
     result = exporter.export(
         ExportRequest(
-            target=job.id,
+            target=job.harness_session_id,
             agent_name="research",
             output_path=output_path,
         )
@@ -344,7 +344,7 @@ def archive_session(
                 f"Refusing to archive sessions to public bucket {target.bucket_id!r}."
             )
 
-    session_dir = home / "sessions" / job.id
+    session_dir = home / "sessions" / job.harness_session_id
     if not session_dir.is_dir():
         raise FileNotFoundError(f"Session directory does not exist: {session_dir}")
     for source in sorted(path for path in session_dir.rglob("*") if path.is_file()):

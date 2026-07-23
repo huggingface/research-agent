@@ -45,8 +45,13 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
     assert "sendMessage" in payload
     assert "Add to chat" in payload
     assert "Open report" in payload
+    assert "Markdown report" in payload
+    assert "dispatch-markdown-body" in payload
+    assert '"when": "{{ job.markdown_report }}"' in payload
     assert "openLink" in payload
     assert "Cancel this research run?" in payload
+    assert "Starting research agent" in payload
+    assert "Original query" in payload
     assert "Agent events" in payload
     assert "Hide log" in payload
     assert "Show log" in payload

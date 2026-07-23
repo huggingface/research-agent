@@ -160,7 +160,7 @@ class ArchiveFilesystemSimulator:
 
 def test_private_archive_preserves_raw_session_and_codex_trace(tmp_path) -> None:
     job = ResearchJob(id="research-abc", topic="secret prompt", owner_id="alice")
-    session = tmp_path / "sessions" / job.id
+    session = tmp_path / "sessions" / job.harness_session_id
     session.mkdir(parents=True)
     (session / "session.json").write_text('{"topic":"secret prompt"}')
     (session / "history_research.json").write_text('{"messages":[]}')
@@ -191,7 +191,7 @@ def test_private_archive_preserves_raw_session_and_codex_trace(tmp_path) -> None
 
 def test_archive_refuses_public_bucket(tmp_path) -> None:
     job = ResearchJob(id="research-abc", topic="topic", owner_id="alice")
-    (tmp_path / "sessions" / job.id).mkdir(parents=True)
+    (tmp_path / "sessions" / job.harness_session_id).mkdir(parents=True)
 
     with pytest.raises(RuntimeError, match="public bucket"):
         archive_session(

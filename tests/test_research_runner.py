@@ -7,7 +7,11 @@ import pytest
 
 from fast_agent import AgentAuth
 from research.app_jobs import ResearchJob
-from research.research_runner import ResearchRunner
+from research.research_runner import (
+    ResearchRunner,
+    _clean_headline,
+    _workspace_id,
+)
 
 
 class BlockingResearchRunner(ResearchRunner):
@@ -63,6 +67,20 @@ class RetryingReportRunner(ResearchRunner):
 class FailingResearchRunner(ResearchRunner):
     async def invoke(self, job: ResearchJob, auth: None) -> str:
         raise RuntimeError("source endpoint returned HTTP 429")
+
+
+class HeadlineResponse:
+    def text_content(self) -> str:
+        return "MCP Client Usage Trends"
+
+
+class HeadlineHarness:
+    def __init__(self) -> None:
+        self.requests: list[object] = []
+
+    async def invoke(self, request: object) -> HeadlineResponse:
+        self.requests.append(request)
+        return HeadlineResponse()
 
 
 @pytest.mark.asyncio
@@ -142,3 +160,47 @@ async def test_html_report_stage_fails_after_two_attempts(tmp_path: Path) -> Non
     assert runner.invocations == 2
     assert runner.finalizations == 2
     assert job.birch_finalize_attempts == 2
+
+
+def test_headline_and_workspace_id_are_short_and_readable() -> None:
+    job = ResearchJob(
+        id="research-a7d1c5d57ef1",
+        topic="topic",
+        owner_id="alice",
+        created_at=1784640000,
+    )
+
+    headline = _clean_headline("MCP Client Usage Trends")
+
+    assert headline == "MCP Client Usage Trends"
+    assert _workspace_id(job, headline) == "26-07-21-mcp-client-usage-trends-7ef1"
+    assert job.harness_session_id == "research-a7d1c5d57ef1-research"
+
+
+def test_invalid_headline_falls_back_without_query_details() -> None:
+    assert _clean_headline("one two three four five six seven") == (
+        "Focused Research Brief"
+    )
+
+
+@pytest.mark.asyncio
+async def test_prepare_identity_updates_placeholder_before_workspace_open(
+    tmp_path: Path,
+) -> None:
+    harness = HeadlineHarness()
+    runner = ResearchRunner(harness=harness, home=tmp_path)  # type: ignore[arg-type]
+    job = ResearchJob(
+        id="research-a7d1c5d57ef1",
+        topic="Compare weekly MCP client usage",
+        owner_id="alice",
+        created_at=1784640000,
+    )
+
+    assert job.headline == "Starting research agent"
+    assert job.workspace_id is None
+
+    await runner.prepare_identity(job, None)
+
+    assert job.headline == "MCP Client Usage Trends"
+    assert job.workspace_id == "26-07-21-mcp-client-usage-trends-7ef1"
+    assert len(harness.requests) == 1

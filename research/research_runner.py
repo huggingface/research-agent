@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -14,6 +16,9 @@ from .app_auth import effective_agent_auth
 from .app_artifacts import finalize_bucket_html
 from .app_jobs import ResearchJob, current_research_job
 from .app_observability import JobProgressHandler, try_export_trace
+from .artifact_contract import verify_research_handoff
+from .birch_renderer import generate_birch_report
+from .research_workspace import ensure_workspace
 
 if TYPE_CHECKING:
     from fast_agent.core.harness import AgentHarness
@@ -35,6 +40,7 @@ class ResearchRunner:
     ) -> str:
         """The essential Harness API flow used by this example."""
         auth = effective_agent_auth(auth)
+        await self.prepare_identity(job, auth)
 
         async def summarize_activity(prompt: str) -> str:
             response = await self.harness.invoke(
@@ -56,29 +62,74 @@ class ResearchRunner:
             try:
                 async with self.harness.app().open(
                     AppOpenRequest(
-                        session_id=job.id,
+                        session_id=job.harness_session_id,
                         agent="research",
-                        metadata={"job_id": job.id},
+                        metadata={
+                            "job_id": job.id,
+                            "research_workspace_id": job.artifact_id,
+                        },
                     )
                 ) as session:
                     response = await session.invoke(
                         AgentRequest.text(
                             job.topic,
                             agent="research",
-                            session_id=job.id,
+                            session_id=job.harness_session_id,
                             auth=auth,
                             params=RequestParams(
                                 tool_execution_handler=JobProgressHandler(job),
                                 emit_loop_progress=True,
                             ),
-                            metadata={"job_id": job.id},
+                            metadata={
+                                "job_id": job.id,
+                                "research_workspace_id": job.artifact_id,
+                            },
                         )
                     )
             finally:
                 current_research_job.reset(job_token)
                 current_activity_narrator.reset(token)
                 await narrator.close()
+        await asyncio.to_thread(
+            verify_research_handoff,
+            job,
+            auth,
+        )
+        job.add_event("Verified durable research handoff", kind="artifact")
         return response.text_content()
+
+    async def prepare_identity(
+        self,
+        job: ResearchJob,
+        auth: AgentAuth | None,
+    ) -> None:
+        """Name the brief before the research workspace is opened."""
+        if job.workspace_id:
+            return
+        prompt = (
+            "HEADLINE MODE\n\n"
+            "Return only a specific 3–4 word headline for this research goal. "
+            "Use title case and no punctuation. Avoid filler words such as "
+            "Research, Analysis, Report, Study, or Overview. Do not include "
+            "personal data, credentials, private identifiers, or repository "
+            f"names.\n\nGOAL:\n{job.topic[:1200]}"
+        )
+        try:
+            response = await self.harness.invoke(
+                AgentRequest.text(
+                    prompt,
+                    agent="activity-summarizer",
+                    session_id=f"{job.id}-headline",
+                    auth=auth,
+                    metadata={"job_id": job.id, "headline_generation": True},
+                )
+            )
+            headline = _clean_headline(response.text_content())
+        except Exception:
+            headline = "Focused Research Brief"
+        job.headline = headline
+        job.workspace_id = _workspace_id(job, headline)
+        job.add_event(f"Research brief named: {headline}", kind="Setup")
 
     async def run(
         self,
@@ -172,49 +223,23 @@ class ResearchRunner:
         auth: AgentAuth,
         attempt: int,
     ) -> None:
-        prompt = (
-            "Build the required interactive HTML report for this Research "
-            "Dispatch run. Read output/report.md from the verified workspace as "
-            "the complete source of truth. Follow the Birch skill and canonical "
-            "template. After the required reads, immediately call "
-            "stage_birch_report with a concise structured brief preserving the "
-            "key rankings, findings, caveats, and every distinct source URL. Do "
-            "not explore other files or datasets, generate charts, call "
-            "hf_fs_write, or draft HTML yourself. Return only the staged path "
-            "and a concise note."
+        workspace = await asyncio.to_thread(
+            ensure_workspace,
+            auth=auth,
+            request_metadata={"research_workspace_id": job.artifact_id},
+            open_metadata={},
+            create_bucket=False,
+            write_markers=False,
         )
-        metadata = {
-            "job_id": job.id,
-            "report_stage": True,
-            "report_attempt": attempt,
-        }
-        with self.harness.request_context(auth=auth):
-            job_token = current_research_job.set(job)
-            try:
-                async with self.harness.app().open(
-                    AppOpenRequest(
-                        session_id=job.id,
-                        agent="birch-html",
-                        metadata=metadata,
-                    )
-                ) as session:
-                    response = await session.invoke(
-                        AgentRequest.text(
-                            prompt,
-                            agent="birch-html",
-                            session_id=job.id,
-                            auth=auth,
-                            params=RequestParams(
-                                tool_execution_handler=JobProgressHandler(job),
-                                emit_loop_progress=True,
-                            ),
-                            metadata=metadata,
-                        )
-                    )
-            finally:
-                current_research_job.reset(job_token)
-        if not response.text_content().strip():
-            raise RuntimeError("Birch report agent returned an empty response")
+        job.add_event(
+            "Started isolated presentation sandbox with the workspace mounted",
+            kind="Report",
+        )
+        job_token = current_research_job.set(job)
+        try:
+            await generate_birch_report(workspace, attempt=attempt)
+        finally:
+            current_research_job.reset(job_token)
 
     async def _finalize_html(
         self,
@@ -231,3 +256,17 @@ class ResearchRunner:
         if urls is None:  # defensive; required=True raises instead
             raise RuntimeError("Birch HTML finalizer returned no artifact")
         return urls
+
+
+def _clean_headline(value: str) -> str:
+    words = re.findall(r"[A-Za-z0-9][A-Za-z0-9+.-]*", value.strip())
+    if not 2 <= len(words) <= 6:
+        return "Focused Research Brief"
+    return " ".join(words[:4])
+
+
+def _workspace_id(job: ResearchJob, headline: str) -> str:
+    date = datetime.fromtimestamp(job.created_at, UTC).strftime("%y-%m-%d")
+    slug = re.sub(r"[^a-z0-9]+", "-", headline.lower()).strip("-")[:48]
+    suffix = job.id.removeprefix("research-")[-4:]
+    return f"{date}-{slug or 'research-brief'}-{suffix}"

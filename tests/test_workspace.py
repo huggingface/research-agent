@@ -66,6 +66,19 @@ def test_clean_session_id_passes_through_unchanged() -> None:
     )
 
 
+def test_readable_workspace_id_takes_precedence_over_internal_session() -> None:
+    assert (
+        _session_id(
+            {
+                "request_session_id": "research-0d40b85945be",
+                "research_workspace_id": "26-07-21-client-usage-a7d1",
+            },
+            {},
+        )
+        == "26-07-21-client-usage-a7d1"
+    )
+
+
 def test_missing_session_id_is_unique_not_shared_default() -> None:
     first = _session_id({}, {})
     second = _session_id({}, {})

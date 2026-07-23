@@ -162,6 +162,8 @@ def _session_id(
     open_metadata: Mapping[str, object],
 ) -> str:
     candidates = [
+        request_metadata.get("research_workspace_id"),
+        open_metadata.get("research_workspace_id"),
         request_metadata.get("request_session_id"),
         request_metadata.get("harness_session_id"),
         request_metadata.get("requested_session_id"),

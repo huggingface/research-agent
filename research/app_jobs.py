@@ -56,6 +56,8 @@ class ResearchJob:
     id: str
     topic: str
     owner_id: str
+    headline: str = "Starting research agent"
+    workspace_id: str | None = None
     status: str = "queued"
     phase: str = "preparing"
     created_at: float = field(default_factory=time)
@@ -78,6 +80,15 @@ class ResearchJob:
     event_count_total: int = 0
     turn_count: int = 0
     birch_finalize_attempts: int = 0
+
+    @property
+    def artifact_id(self) -> str:
+        return self.workspace_id or self.id
+
+    @property
+    def harness_session_id(self) -> str:
+        """Keep model persistence separate from job and artifact identities."""
+        return f"{self.id}-research"
 
     def add_event(
         self,
@@ -127,6 +138,8 @@ class ResearchJob:
         return {
             "job_id": self.id,
             "topic": self.topic,
+            "headline": self.headline,
+            "workspace_id": self.workspace_id,
             "status": self.status,
             "phase": self.phase,
             "events": events,
@@ -364,6 +377,8 @@ def unavailable_snapshot(job_id: str) -> dict[str, Any]:
     return {
         "job_id": job_id,
         "topic": "",
+        "headline": "Research unavailable",
+        "workspace_id": None,
         "status": "expired",
         "phase": "expired",
         "events": [],
