@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 APP_ROOT = Path(__file__).parent
 DEFAULT_RESEARCH_ROOT = Path(os.getenv("RESEARCH_ROOT", "/research"))
+TEMPLATE_MARKER = json.loads((APP_ROOT / "archive-template.json").read_text())
 SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 DATE_PREFIX = re.compile(r"^(?P<date>\d{2}-\d{2}-\d{2})-(?P<slug>.+?)-[a-f0-9]{4}$")
 HEADING = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
@@ -323,7 +324,11 @@ def create_app(root: Path = DEFAULT_RESEARCH_ROOT) -> FastAPI:
 
     @app.get("/health")
     def health() -> dict[str, object]:
-        return {"ok": root.is_dir(), "root": str(root)}
+        return {
+            "ok": root.is_dir(),
+            "root": str(root),
+            "template_version": TEMPLATE_MARKER["template_version"],
+        }
 
     return app
 

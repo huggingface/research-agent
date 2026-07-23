@@ -11,12 +11,14 @@ from fast_agent import AgentRequest, AppOpenRequest, HarnessAppContext
 from mcp.types import TextContent
 
 try:
+    from .archive_provisioning import ensure_archive_space
     from .research_workspace import (
         ResearchWorkspace,
         current_research_workspace,
         ensure_workspace,
     )
 except ImportError:  # loaded as top-level module from the fast-agent home
+    from research.archive_provisioning import ensure_archive_space
     from research.research_workspace import (
         ResearchWorkspace,
         current_research_workspace,
@@ -65,6 +67,7 @@ class ResearchHarnessSession:
             },
             open_metadata=self._open_metadata,
         )
+        workspace = await self._with_archive_space(workspace)
         forwarded = self._with_bucket_instructions(request, workspace)
         workspace_token = current_research_workspace.set(workspace)
         try:
@@ -81,6 +84,33 @@ class ResearchHarnessSession:
         finally:
             current_research_workspace.reset(workspace_token)
 
+    async def _with_archive_space(
+        self,
+        workspace: ResearchWorkspace,
+    ) -> ResearchWorkspace:
+        try:
+            archive = await asyncio.to_thread(
+                ensure_archive_space,
+                username=workspace.username,
+                bucket_id=workspace.bucket_id,
+                token=workspace.bearer_token,
+            )
+        except Exception as exc:
+            return replace(
+                workspace,
+                archive_status="error",
+                archive_error=f"{type(exc).__name__}: {exc}",
+            )
+        return replace(
+            workspace,
+            archive_space_id=archive.space_id,
+            archive_space_url=archive.space_url,
+            archive_app_url=archive.app_url,
+            archive_status=archive.status,
+            archive_template_version=archive.template_version,
+            archive_installed_version=archive.installed_version,
+        )
+
     def _with_bucket_instructions(
         self, request: AgentRequest, workspace: ResearchWorkspace
     ) -> AgentRequest:
@@ -92,6 +122,16 @@ class ResearchHarnessSession:
                 f"- Root: `{workspace.root}`",
                 f"- Scratch/workings: `{workspace.scratch}`",
                 f"- Final user-facing outputs: `{workspace.output}`",
+                *(
+                    [
+                        f"- Report archive Space: `{workspace.archive_space_id}`",
+                        f"- Report archive: {workspace.archive_space_url}",
+                        f"- Archive app: {workspace.archive_app_url}",
+                        f"- Archive status: `{workspace.archive_status}`",
+                    ]
+                    if workspace.archive_space_id
+                    else []
+                ),
                 "The workspace was verified before this prompt was sent.",
                 f"Hugging Face MCP authentication is verified for `{workspace.username}`.",
                 "The same caller bearer token is forwarded to Hugging Face MCP tool calls.",
@@ -117,6 +157,17 @@ class ResearchHarnessSession:
                 "research_scratch": workspace.scratch,
                 "research_output": workspace.output,
                 "research_marker_paths": list(workspace.marker_paths),
+                "research_archive_space_id": workspace.archive_space_id,
+                "research_archive_space_url": workspace.archive_space_url,
+                "research_archive_app_url": workspace.archive_app_url,
+                "research_archive_status": workspace.archive_status,
+                "research_archive_template_version": (
+                    workspace.archive_template_version
+                ),
+                "research_archive_installed_version": (
+                    workspace.archive_installed_version
+                ),
+                "research_archive_error": workspace.archive_error,
             },
         )
 

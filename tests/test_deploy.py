@@ -63,6 +63,12 @@ def test_deployment_sources_are_staged_from_canonical_sources(
         ROOT / "research/research_app.py"
     ).read_bytes()
 
+    template = built_deployments / "research-archive-template"
+    assert (template / "archive-template.json").read_bytes() == (
+        ROOT / "deploy/research-archive/archive-template.json"
+    ).read_bytes()
+    assert "Research Archive Template" in (template / "README.md").read_text()
+
 
 def test_deployed_birch_card_tools_exist_in_renderer(
     built_deployments: Path,

@@ -202,6 +202,34 @@ hf upload <owner>/<space> .build/deploy/research-agent-two --repo-type space
 Never edit files under `.build/`; update the canonical sources in `research/`
 or the deployment-specific files in `deploy/`, then rebuild.
 
+### Per-user report archive provisioning
+
+After a caller's private `<username>/research-agent` bucket is verified, the
+harness idempotently ensures a private `<username>/research-agent` Space exists.
+New Spaces are duplicated from the public template configured by
+`RESEARCH_ARCHIVE_TEMPLATE_SPACE` (default:
+`evalstate/research-archive-template`) with the bucket mounted read-write at
+`/research`.
+
+Both template and duplicate carry `archive-template.json`. The provisioner:
+
+- requires the template marker to match its expected version before duplication
+- refuses to modify an existing Space without a valid managed marker
+- reports `version_mismatch` without overwriting an older managed installation
+- configures the bucket volume atomically during duplication
+- retries safely on later requests and does not fail research if optional
+  archive provisioning fails
+
+Build and publish the data-free public template with:
+
+```bash
+uv run --project ../fast-agent python scripts/build_deploy.py \
+  research-archive-template
+hf upload <owner>/research-archive-template \
+  .build/deploy/research-archive-template \
+  --repo-type space
+```
+
 The experimental app uses FastMCP's optional Apps dependencies. Run it locally
 with the same extra installed by the deployment image:
 

@@ -41,6 +41,19 @@ TARGETS = {
         Overlay("research/skills/birch-html", "skills/birch-html"),
     ),
     "research-archive": (),
+    "research-archive-template": (
+        Overlay("deploy/research-archive/Dockerfile", "Dockerfile"),
+        Overlay("deploy/research-archive/app.py", "app.py"),
+        Overlay("deploy/research-archive/index.html", "index.html"),
+        Overlay(
+            "deploy/research-archive/huggingface-logo.svg",
+            "huggingface-logo.svg",
+        ),
+        Overlay(
+            "deploy/research-archive/archive-template.json",
+            "archive-template.json",
+        ),
+    ),
 }
 
 

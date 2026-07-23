@@ -33,6 +33,13 @@ class ResearchWorkspace:
     bucket_created: bool
     marker_paths: tuple[str, ...]
     bearer_token: str | None
+    archive_space_id: str | None = None
+    archive_space_url: str | None = None
+    archive_app_url: str | None = None
+    archive_status: str | None = None
+    archive_template_version: str | None = None
+    archive_installed_version: str | None = None
+    archive_error: str | None = None
 
 
 current_research_workspace: ContextVar[ResearchWorkspace | None] = ContextVar(
