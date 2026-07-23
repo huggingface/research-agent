@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from research.app_ui import build_research_ui
+from research.hf_design import HF_DESIGNS, HF_FONT_STYLESHEET
 
 
 def test_completed_view_continues_in_chat_with_full_markdown() -> None:
@@ -58,6 +61,8 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
     assert "chevron-up" in payload
     assert "chevron-down" in payload
     assert app.to_json()["state"]["event_log_expanded"] is True
+    assert app.stylesheets is None
+    assert "hf-design" not in payload
 
 
 def test_short_query_does_not_offer_expansion() -> None:
@@ -84,3 +89,45 @@ def test_short_query_does_not_offer_expansion() -> None:
     app = build_research_ui("A short query", snapshot, live=False)
 
     assert app.to_json()["state"]["query_toggleable"] is False
+
+
+@pytest.mark.parametrize("design", HF_DESIGNS)
+def test_hugging_face_design_options_include_brand_and_fonts(design: str) -> None:
+    snapshot = {
+        "job_id": "research-123",
+        "status": "running",
+        "phase": "researching",
+        "done": False,
+        "events": [],
+        "activity_roll": [],
+        "recent_summaries": [],
+        "activity_summary": "Working.",
+        "activity_source": "research/agent_loop",
+        "event_count": 1,
+        "elapsed": "00:01",
+        "turn_count": 0,
+        "cancellable": True,
+        "markdown_report": None,
+        "html_report_ready": False,
+        "html_report_url": None,
+        "trace_path": None,
+    }
+
+    app = build_research_ui("A query", snapshot, live=False, design=design)
+    payload = json.dumps(app.to_json())
+
+    assert f"hf-{design}" in payload
+    assert "Hugging Face" in payload
+    assert "Research Agent" in payload
+    assert "data:image/svg+xml;base64," in payload
+    assert app.stylesheets == [HF_FONT_STYLESHEET]
+
+
+def test_unknown_hugging_face_design_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Unknown design"):
+        build_research_ui(
+            "A query",
+            {"job_id": "research-123"},
+            live=False,
+            design="unknown",  # type: ignore[arg-type]
+        )

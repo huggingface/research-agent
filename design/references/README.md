@@ -33,3 +33,21 @@ there with:
 uv run --project ../fast-agent --with 'fastmcp[apps]' \
   --with prefab-ui python scripts/render_app_preview.py --state all
 ```
+
+## Hugging Face design option packs
+
+Three review-only Prefab options are available:
+
+- `hub-classic`: neutral Hub lists, cards, and amber accents
+- `spaces-gradient`: colorful featured-Space hierarchy
+- `dataset-studio`: compact dataset-workspace layout
+
+Render all light/dark desktop and mobile review packs with:
+
+```bash
+uv run --project ../fast-agent --with 'fastmcp[apps]' \
+  --with prefab-ui python scripts/render_design_packs.py
+```
+
+Open `.artifacts/prefabtest-packs/index.html` to compare them. The production
+app continues to use the existing design until one option is selected.

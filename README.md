@@ -229,6 +229,17 @@ current implementation and `handoff/` contains the target design references.
 Generated `.artifacts/` previews are intentionally not design history and are
 ignored by Git.
 
+Render the three Hugging Face design-option packs in both light and dark modes:
+
+```bash
+uv run --project ../fast-agent --with 'fastmcp[apps]' \
+  --with prefab-ui python scripts/render_design_packs.py
+```
+
+Open `.artifacts/prefabtest-packs/index.html` to compare Hub Classic, Spaces
+Gradient, and Dataset Studio. These review variants do not change the
+production app until one is selected.
+
 Running jobs can be cancelled from the app header. Cancellation is coordinated
 through an in-memory task registry, matching the single-process Space
 deployment model.

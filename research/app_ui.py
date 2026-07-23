@@ -15,6 +15,7 @@ from prefab_ui.components import (
     Dialog,
     Div,
     Heading,
+    Image,
     If,
     Markdown,
     Row,
@@ -23,6 +24,15 @@ from prefab_ui.components import (
 )
 from prefab_ui.components.control_flow import ForEach
 from prefab_ui.rx import RESULT, STATE
+
+from .hf_design import (
+    HF_DESIGN_CSS,
+    HF_FONT_STYLESHEET,
+    HF_LOGO_DATA_URI,
+    HFDesign,
+    design_css_class,
+    validate_design,
+)
 
 BROADSHEET_CSS = """
 .dispatch-app {
@@ -562,8 +572,11 @@ def build_research_ui(
     *,
     build_id: str = "dev",
     live: bool = True,
+    design: HFDesign | None = None,
 ) -> PrefabApp:
     snapshot = _ui_snapshot(snapshot)
+    if design is not None:
+        design = validate_design(design)
     on_mount = None
     if live:
         on_mount = [
@@ -635,10 +648,19 @@ def build_research_ui(
     if not live:
         read_report = SetState("chat_sent", True)
 
+    css_class = "dispatch-app"
+    css = [BROADSHEET_CSS]
+    stylesheets = None
+    if design is not None:
+        css_class = design_css_class(design)
+        css.append(HF_DESIGN_CSS)
+        stylesheets = [HF_FONT_STYLESHEET]
+
     with PrefabApp(
         title="Research Dispatch",
-        css_class="dispatch-app",
-        css=[BROADSHEET_CSS],
+        css_class=css_class,
+        css=css,
+        stylesheets=stylesheets,
         state={
             "job": snapshot,
             "topic": topic,
@@ -655,7 +677,21 @@ def build_research_ui(
         with Div(css_class="dispatch-sheet", on_mount=on_mount):
             with Column(css_class="dispatch-header", gap=0):
                 with Row(css_class="dispatch-topbar", gap=4):
-                    Text("Research Dispatch", css_class="dispatch-kicker")
+                    if design is None:
+                        Text("Research Dispatch", css_class="dispatch-kicker")
+                    else:
+                        with Row(css_class="hf-brand", gap=2):
+                            Image(
+                                src=HF_LOGO_DATA_URI,
+                                alt="Hugging Face",
+                                css_class="hf-brand-logo",
+                            )
+                            with Column(css_class="hf-brand-copy", gap=0):
+                                Text("Hugging Face", css_class="hf-brand-name")
+                                Text(
+                                    "Research Agent",
+                                    css_class="hf-brand-product",
+                                )
                     with Row(css_class="dispatch-controls", gap=3):
                         with Row(css_class="dispatch-stats", gap=2):
                             Text(STATE.job.elapsed, css_class="dispatch-stat")

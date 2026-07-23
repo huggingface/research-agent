@@ -10,6 +10,7 @@ from typing import Annotated, Any
 from fast_agent import FastAgent
 from fastmcp import Context as MCPContext
 from fastmcp import FastMCP, FastMCPApp
+from fastmcp.apps import ResourceCSP
 from pydantic import Field
 from prefab_ui.app import PrefabApp
 
@@ -23,10 +24,25 @@ from .app_jobs import (
 )
 from .app_renderer import app_build_id, install_versioned_renderer
 from .app_ui import build_research_ui
+from .hf_design import HF_RESOURCE_DOMAINS, HFDesign
 from .research_runner import ResearchRunner
 
 RESEARCH_HOME = Path(__file__).parent
 AGENT_CARDS = RESEARCH_HOME / "agent-cards"
+PRODUCTION_UI_DESIGN: HFDesign = "hub-classic"
+
+
+def configure_research_ui_csp(app: FastMCPApp, tool_name: str = "research") -> None:
+    """Allow the Google-hosted Hub fonts used by design variants."""
+    csp = ResourceCSP(resource_domains=list(HF_RESOURCE_DOMAINS)).model_dump(
+        by_alias=True,
+        exclude_none=True,
+    )
+    for tool in app._local._components.values():
+        if getattr(tool, "name", None) == tool_name:
+            tool.meta.setdefault("ui", {})["csp"] = csp
+            return
+    raise RuntimeError(f"Prefab UI tool was not registered: {tool_name}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,7 +98,14 @@ def register_research_app(
             else "local development user"
         )
         job.add_event(f"Workspace access confirmed for {identity}.", kind="Setup")
-        return build_research_ui(topic, job.snapshot(), build_id=build_id)
+        return build_research_ui(
+            topic,
+            job.snapshot(),
+            build_id=build_id,
+            design=PRODUCTION_UI_DESIGN,
+        )
+
+    configure_research_ui_csp(app)
 
     @app.tool()
     async def start_research(

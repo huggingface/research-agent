@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from design.preview_states import TOPIC, preview_snapshot  # noqa: E402
 from research.app_ui import build_research_ui  # noqa: E402
+from research.hf_design import HF_DESIGNS, HFDesign  # noqa: E402
 
 DEFAULT_OUTPUT = ROOT / ".artifacts" / "app-preview"
 STATES = ("running", "completed", "failed", "cancelled")
@@ -28,9 +29,15 @@ def render_state(
     width: int,
     height: int,
     mode: str | None = None,
+    design: HFDesign | None = None,
 ) -> tuple[Path, Path | None]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    app = build_research_ui(TOPIC, preview_snapshot(state), live=False)
+    app = build_research_ui(
+        TOPIC,
+        preview_snapshot(state),
+        live=False,
+        design=design,
+    )
     app.mode = mode
     suffix = f"-{mode}" if mode else ""
     html_path = output_dir / f"{state}{suffix}.html"
@@ -85,6 +92,7 @@ def main() -> int:
     parser.add_argument("--width", type=int, default=1000)
     parser.add_argument("--height", type=int, default=900)
     parser.add_argument("--mode", choices=("light", "dark"))
+    parser.add_argument("--design", choices=HF_DESIGNS)
     args = parser.parse_args()
 
     states = STATES if args.state == "all" else (args.state,)
@@ -96,6 +104,7 @@ def main() -> int:
             width=args.width,
             height=args.height,
             mode=args.mode,
+            design=args.design,
         )
         print(f"{state}: {html_path}")
         if png_path is not None:
