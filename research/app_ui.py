@@ -245,6 +245,9 @@ BROADSHEET_CSS = """
   margin-top: 14px;
   color: var(--dispatch-accent);
 }
+.dispatch-archive-card {
+  grid-column: 1 / -1;
+}
 .dispatch-markdown-report {
   margin-top: 16px;
   padding: 22px;
@@ -875,6 +878,34 @@ def build_research_ui(
                                 ),
                                 onClick=OpenLink(STATE.job.html_report_url),
                             )
+                        with If(STATE.job.archive_space_url):
+                            with Column(
+                                css_class=(
+                                    "dispatch-report-card dispatch-archive-card"
+                                ),
+                                gap=0,
+                            ):
+                                Text(
+                                    "Archive",
+                                    css_class="dispatch-section-label",
+                                )
+                                Text(
+                                    "All research reports",
+                                    css_class="dispatch-report-card-title",
+                                )
+                                Text(
+                                    "Browse this report alongside previous "
+                                    "research runs and their generated files.",
+                                    css_class="dispatch-report-card-copy",
+                                )
+                                Button(
+                                    "Browse archive",
+                                    variant="outline",
+                                    css_class="dispatch-report-action",
+                                    onClick=OpenLink(
+                                        STATE.job.archive_space_url,
+                                    ),
+                                )
                     with If(STATE.job.markdown_report):
                         with Div(css_class="dispatch-markdown-report"):
                             Text(

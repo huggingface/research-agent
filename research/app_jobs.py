@@ -67,6 +67,9 @@ class ResearchJob:
     markdown_report: str | None = None
     markdown_report_uri: str | None = None
     markdown_report_error: str | None = None
+    archive_space_url: str | None = None
+    archive_app_url: str | None = None
+    archive_template_version: str | None = None
     html_report_uri: str | None = None
     html_report_url: str | None = None
     error: str | None = None
@@ -164,6 +167,9 @@ class ResearchJob:
             "markdown_report": self.markdown_report,
             "markdown_report_uri": self.markdown_report_uri,
             "markdown_report_error": self.markdown_report_error,
+            "archive_space_url": self.archive_space_url,
+            "archive_app_url": self.archive_app_url,
+            "archive_template_version": self.archive_template_version,
             "html_report_uri": self.html_report_uri,
             "html_report_url": self.html_report_url,
             "html_report_ready": bool(self.html_report_uri),
@@ -399,6 +405,9 @@ def unavailable_snapshot(job_id: str) -> dict[str, Any]:
         "markdown_report": None,
         "markdown_report_uri": None,
         "markdown_report_error": None,
+        "archive_space_url": None,
+        "archive_app_url": None,
+        "archive_template_version": None,
         "html_report_uri": None,
         "html_report_url": None,
         "html_report_ready": False,

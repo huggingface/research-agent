@@ -124,6 +124,9 @@ _BASE: dict[str, Any] = {
         "hf://buckets/evalstate/research-agent/research-preview/output/report.md"
     ),
     "markdown_report_error": None,
+    "archive_space_url": None,
+    "archive_app_url": None,
+    "archive_template_version": None,
     "html_report_uri": None,
     "html_report_url": None,
     "html_report_ready": False,
@@ -168,6 +171,11 @@ def preview_snapshot(state: str) -> dict[str, Any]:
                 "research-preview/output/report.html"
             ),
             html_report_ready=True,
+            archive_space_url=(
+                "https://huggingface.co/spaces/evalstate/research-agent"
+            ),
+            archive_app_url="https://evalstate-research-agent.hf.space",
+            archive_template_version="1.0.0",
             done=True,
             cancellable=False,
         )

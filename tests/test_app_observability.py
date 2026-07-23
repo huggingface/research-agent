@@ -108,6 +108,12 @@ async def test_markdown_report_is_captured_from_current_session() -> None:
         bucket_created=False,
         marker_paths=(),
         bearer_token="token",
+        archive_space_id="alice/research-agent",
+        archive_space_url="https://huggingface.co/spaces/alice/research-agent",
+        archive_app_url="https://alice-research-agent.hf.space",
+        archive_status="ready",
+        archive_template_version="1.0.0",
+        archive_installed_version="1.0.0",
     )
     job = ResearchJob(id="research-abc", topic="topic", owner_id="alice")
 
@@ -123,6 +129,9 @@ async def test_markdown_report_is_captured_from_current_session() -> None:
 
     assert job.markdown_report == "# Report\n\nVerified result."
     assert job.markdown_report_uri == f"{workspace.output}report.md"
+    assert job.archive_space_url == workspace.archive_space_url
+    assert job.archive_app_url == workspace.archive_app_url
+    assert job.archive_template_version == "1.0.0"
     assert job.events[-1]["kind"] == "Report"
 
 

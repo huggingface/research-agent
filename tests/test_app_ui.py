@@ -24,6 +24,11 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
         "turn_count": 3,
         "cancellable": False,
         "markdown_report": "# Findings",
+        "archive_space_url": (
+            "https://huggingface.co/spaces/alice/research-agent"
+        ),
+        "archive_app_url": "https://alice-research-agent.hf.space",
+        "archive_template_version": "1.0.0",
         "html_report_ready": True,
         "trace_path": None,
         "result": "Completed.",
@@ -49,6 +54,9 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
     assert "Add to chat" in payload
     assert "Open report" in payload
     assert "Markdown report" in payload
+    assert "Browse archive" in payload
+    assert "All research reports" in payload
+    assert "https://huggingface.co/spaces/alice/research-agent" in payload
     assert "dispatch-markdown-body" in payload
     assert '"when": "{{ job.markdown_report }}"' in payload
     assert "openLink" in payload

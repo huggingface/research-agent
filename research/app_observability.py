@@ -227,6 +227,9 @@ async def capture_markdown_report(
     job.markdown_report = markdown
     job.markdown_report_uri = uri
     job.markdown_report_error = None
+    job.archive_space_url = workspace.archive_space_url
+    job.archive_app_url = workspace.archive_app_url
+    job.archive_template_version = workspace.archive_installed_version
     job.add_event("The Markdown report is ready to review.", kind="Report")
 
 
