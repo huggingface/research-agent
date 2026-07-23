@@ -1,6 +1,12 @@
 __pycache__/
 *.py[cod]
 .fast-agent/
+
+# Generated build and preview output.
 .build/
+.artifacts/
+
+# Windows download metadata.
+*:Zone.Identifier
 research/.check_for_update_done
 .fast-agent/fast-agent.yaml

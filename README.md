@@ -224,6 +224,11 @@ HTML and PNG files are written under `.artifacts/app-preview/`. Preview mode
 uses Prefab's bundled standalone renderer and disables the app's mount-time MCP
 tool calls, so it requires no server, token, OAuth flow, or network access.
 
+Curated design inputs live under `design/references/`: `baseline/` records the
+current implementation and `handoff/` contains the target design references.
+Generated `.artifacts/` previews are intentionally not design history and are
+ignored by Git.
+
 Running jobs can be cancelled from the app header. Cancellation is coordinated
 through an in-memory task registry, matching the single-process Space
 deployment model.
