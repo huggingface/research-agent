@@ -9,8 +9,7 @@ logger:
 model_references:
   system:
     fast: gpt-oss
-    last_used: codexresponses.gpt-5.5?reasoning=medium
-    research: kimi26
+    research: glm52
     html: kimi27
 
 mcp:
@@ -21,12 +20,6 @@ mcp:
       url: https://huggingface.co/mcp?bouquet=research
       read_timeout_seconds: 30
       include_instructions: false
-      auth:
-        forward: huggingface
-    hf_docs_only:
-      description: Hugging Face MCP server, docs bouquet only
-      transport: http
-      url: https://huggingface.co/mcp?bouquet=docs
       auth:
         forward: huggingface
 

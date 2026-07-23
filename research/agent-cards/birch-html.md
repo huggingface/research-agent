@@ -9,7 +9,6 @@ skills:
 function_tools:
   - ../birch_renderer.py:read_birch_skill_file
   - ../birch_renderer.py:stage_birch_report
-use_history: false
 model: $system.html
 tool_hooks:
   after_llm_call: ../activity_hooks.py:capture_after_llm
