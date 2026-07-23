@@ -559,7 +559,7 @@ def _display_source(source: str | None) -> str:
 def _ui_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Add display-only fields without mutating the retained job snapshot."""
     prepared = deepcopy(snapshot)
-    prepared.setdefault("headline", "Starting research agent")
+    prepared.setdefault("headline", "Briefing the researcher")
     prepared.setdefault("workspace_id", None)
     prepared.setdefault(
         "activity_source_label", _display_source(prepared.get("activity_source"))

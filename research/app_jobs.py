@@ -56,7 +56,7 @@ class ResearchJob:
     id: str
     topic: str
     owner_id: str
-    headline: str = "Starting research agent"
+    headline: str = "Briefing the researcher"
     workspace_id: str | None = None
     status: str = "queued"
     phase: str = "preparing"
@@ -76,7 +76,7 @@ class ResearchJob:
     trace_path: str | None = None
     trace_archive_uri: str | None = None
     trace_error: str | None = None
-    activity_summary: str = "Preparing the research agent."
+    activity_summary: str = "Briefing the researcher"
     activity_summary_revision: int = 0
     activity_source: str = "research/agent_loop"
     activity_summaries: list[dict[str, Any]] = field(default_factory=list)

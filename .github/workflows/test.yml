@@ -13,11 +13,16 @@ jobs:
         with:
           python-version: "3.13"
       - run: >-
-          pip install
-          fast-agent-mcp==0.9.7
-          'fastmcp[apps]'
+          python -m pip install
+          fast-agent-mcp==0.9.21
+          'fastmcp[apps]==3.4.4'
+          prefab-ui==0.20.2
           huggingface_hub
-          pytest
-          pytest-asyncio
-      - run: python scripts/sync_deploy.py --check
+          markdown==3.8.2
+          bleach==6.2.0
+          pytest==9.0.3
+          pytest-asyncio==1.4.0
+          ruff==0.15.16
+      - run: ruff check .
       - run: pytest -q
+      - run: python scripts/build_deploy.py --output .build/ci-deploy

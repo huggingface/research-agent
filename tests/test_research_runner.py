@@ -196,7 +196,8 @@ async def test_prepare_identity_updates_placeholder_before_workspace_open(
         created_at=1784640000,
     )
 
-    assert job.headline == "Starting research agent"
+    assert job.headline == "Briefing the researcher"
+    assert job.activity_summary == "Briefing the researcher"
     assert job.workspace_id is None
 
     await runner.prepare_identity(job, None)

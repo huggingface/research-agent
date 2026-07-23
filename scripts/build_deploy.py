@@ -86,7 +86,7 @@ def main() -> int:
         "targets",
         nargs="*",
         choices=TARGETS,
-        default=list(TARGETS),
+        default=None,
         metavar="TARGET",
     )
     parser.add_argument(
@@ -98,7 +98,7 @@ def main() -> int:
     args = parser.parse_args()
 
     output_root = args.output.resolve()
-    for target_name in args.targets:
+    for target_name in args.targets or TARGETS:
         target = build(target_name, output_root)
         print(f"Built {target.relative_to(ROOT) if target.is_relative_to(ROOT) else target}")
     return 0
