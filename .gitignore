@@ -3,3 +3,4 @@ __pycache__/
 .fast-agent/
 .build/
 research/.check_for_update_done
+.fast-agent/fast-agent.yaml
