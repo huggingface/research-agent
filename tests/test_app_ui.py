@@ -60,7 +60,7 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
     assert "Show log" in payload
     assert "chevron-up" in payload
     assert "chevron-down" in payload
-    assert app.to_json()["state"]["event_log_expanded"] is True
+    assert app.to_json()["state"]["event_log_expanded"] is False
     assert app.stylesheets is None
     assert "hf-design" not in payload
 

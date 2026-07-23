@@ -115,3 +115,19 @@ def test_artifact_download_uses_attachment_disposition(tmp_path: Path) -> None:
     assert download.headers["content-disposition"] == (
         'attachment; filename="report.html"'
     )
+
+
+def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
+    module = load_archive_module()
+    client = TestClient(module.create_app(tmp_path))
+
+    page = client.get("/")
+    logo = client.get("/assets/huggingface-logo.svg")
+
+    assert page.status_code == 200
+    assert "Hugging Face" in page.text
+    assert "Research Archive" in page.text
+    assert "research-archive-theme" in page.text
+    assert "fonts.googleapis.com" in page.text
+    assert logo.status_code == 200
+    assert logo.headers["content-type"].startswith("image/svg+xml")

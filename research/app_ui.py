@@ -669,7 +669,7 @@ def build_research_ui(
             "cancel_requested": False,
             "query_expanded": False,
             "query_toggleable": len(topic) > 90,
-            "event_log_expanded": True,
+            "event_log_expanded": False,
             "chat_sent": False,
             "app_version": f"build {build_id}",
         },

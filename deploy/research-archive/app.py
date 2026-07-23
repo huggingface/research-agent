@@ -263,6 +263,14 @@ def create_app(root: Path = DEFAULT_RESEARCH_ROOT) -> FastAPI:
     def index() -> str:
         return (APP_ROOT / "index.html").read_text()
 
+    @app.get("/assets/huggingface-logo.svg")
+    def huggingface_logo() -> FileResponse:
+        return FileResponse(
+            APP_ROOT / "huggingface-logo.svg",
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
     @app.get("/api/runs")
     def runs() -> dict[str, object]:
         entries = archive.list_runs()
