@@ -10,6 +10,7 @@ from research.fastmcp_server import (
     build_fast_agent,
     configure_research_ui_csp,
     enforce_production_isolation,
+    use_stateless_http,
 )
 from research.hf_design import HF_RESOURCE_DOMAINS
 
@@ -33,6 +34,15 @@ def test_explicit_caller_auth_is_preserved_for_agent_initialization() -> None:
 
 def test_production_uses_hub_classic_design() -> None:
     assert PRODUCTION_UI_DESIGN == "hub-classic"
+
+
+@pytest.mark.parametrize("transport", ["http", "streamable-http"])
+def test_production_http_avoids_restart_bound_session_state(transport: str) -> None:
+    assert use_stateless_http(transport)
+
+
+def test_legacy_sse_retains_required_session_state() -> None:
+    assert not use_stateless_http("sse")
 
 
 @pytest.mark.asyncio

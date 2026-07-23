@@ -30,6 +30,7 @@ from .research_runner import ResearchRunner
 RESEARCH_HOME = Path(__file__).parent
 AGENT_CARDS = RESEARCH_HOME / "agent-cards"
 PRODUCTION_UI_DESIGN: HFDesign = "hub-classic"
+STATELESS_TRANSPORTS = {"http", "streamable-http"}
 
 
 def configure_research_ui_csp(app: FastMCPApp, tool_name: str = "research") -> None:
@@ -55,6 +56,11 @@ def parse_args() -> argparse.Namespace:
         default="http",
     )
     return parser.parse_args()
+
+
+def use_stateless_http(transport: str) -> bool:
+    """Avoid stale in-memory MCP sessions on restartable HTTP deployments."""
+    return transport in STATELESS_TRANSPORTS
 
 
 def register_research_app(
@@ -216,4 +222,5 @@ async def main() -> None:
             host=args.host,
             port=args.port,
             middleware=http_middleware(),
+            stateless_http=use_stateless_http(args.transport),
         )
