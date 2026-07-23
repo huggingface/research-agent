@@ -11,6 +11,8 @@ from fast_agent import AgentRequest, AppOpenRequest, HarnessAppContext
 from mcp.types import TextContent
 
 try:
+    from .app_jobs import current_research_job
+    from .app_observability import capture_markdown_report
     from .archive_provisioning import ensure_archive_space
     from .research_workspace import (
         ResearchWorkspace,
@@ -18,6 +20,8 @@ try:
         ensure_workspace,
     )
 except ImportError:  # loaded as top-level module from the fast-agent home
+    from research.app_jobs import current_research_job
+    from research.app_observability import capture_markdown_report
     from research.archive_provisioning import ensure_archive_space
     from research.research_workspace import (
         ResearchWorkspace,
@@ -72,15 +76,19 @@ class ResearchHarnessSession:
         workspace_token = current_research_workspace.set(workspace)
         try:
             if workspace.bearer_token is None:
-                return await self._session.invoke(forwarded)
+                response = await self._session.invoke(forwarded)
+            else:
+                from fast_agent.mcp.auth.context import request_bearer_token
 
-            from fast_agent.mcp.auth.context import request_bearer_token
+                auth_token = request_bearer_token.set(workspace.bearer_token)
+                try:
+                    response = await self._session.invoke(forwarded)
+                finally:
+                    request_bearer_token.reset(auth_token)
 
-            auth_token = request_bearer_token.set(workspace.bearer_token)
-            try:
-                return await self._session.invoke(forwarded)
-            finally:
-                request_bearer_token.reset(auth_token)
+            if job := current_research_job.get():
+                await capture_markdown_report(job)
+            return response
         finally:
             current_research_workspace.reset(workspace_token)
 

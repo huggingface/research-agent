@@ -837,18 +837,19 @@ def build_research_ui(
                                 css_class="dispatch-report-card-title",
                             )
                             Text(
-                                "A concise written answer with the key figures "
-                                "and sources.",
+                                "{{ job.markdown_report ? "
+                                "'Ready to read or continue in chat.' : "
+                                "'The written report will appear here as soon "
+                                "as it is ready.' }}",
                                 css_class="dispatch-report-card-copy",
                             )
                             Button(
-                                "Add to chat",
+                                "{{ job.markdown_report ? 'Add to chat' : "
+                                "'Preparing Markdown…' }}",
                                 variant="outline",
                                 css_class="dispatch-report-action",
                                 disabled=(
-                                    (STATE.job.status != "completed")
-                                    | STATE.chat_sent
-                                    | ~STATE.job.markdown_report
+                                    STATE.chat_sent | ~STATE.job.markdown_report
                                 ),
                                 onClick=read_report,
                             )
@@ -864,18 +865,18 @@ def build_research_ui(
                                 css_class="dispatch-report-card-title",
                             )
                             Text(
-                                "Charts, tables and sources — fully embedded "
-                                "and self-contained.",
+                                "{{ job.html_report_ready ? "
+                                "'Charts, tables and sources — ready to open.' : "
+                                "'The interactive report is being built from "
+                                "the research findings.' }}",
                                 css_class="dispatch-report-card-copy",
                             )
                             Button(
-                                "Open report",
+                                "{{ job.html_report_ready ? 'Open report' : "
+                                "'Building HTML report…' }}",
                                 variant="outline",
                                 css_class="dispatch-report-action",
-                                disabled=(
-                                    (STATE.job.status != "completed")
-                                    | ~STATE.job.html_report_ready
-                                ),
+                                disabled=~STATE.job.html_report_ready,
                                 onClick=OpenLink(STATE.job.html_report_url),
                             )
                         with If(STATE.job.archive_space_url):

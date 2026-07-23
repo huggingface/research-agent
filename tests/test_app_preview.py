@@ -23,12 +23,12 @@ def test_live_app_exposes_real_cancel_action() -> None:
     assert "cancel_research" in str(app.to_json())
 
 
-def test_report_controls_are_present_but_disabled_during_reporting() -> None:
+def test_report_controls_explain_which_artifacts_are_still_building() -> None:
     snapshot = preview_snapshot("running")
     snapshot["phase"] = "reporting"
 
     wire = str(build_research_ui(TOPIC, snapshot, live=False).to_json())
 
-    assert "Add to chat" in wire
-    assert "Open report" in wire
-    assert "job.status != 'completed'" in wire
+    assert "Preparing Markdown" in wire
+    assert "Building HTML report" in wire
+    assert "job.status != 'completed'" not in wire

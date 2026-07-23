@@ -266,7 +266,7 @@ def read_bucket_markdown(
     *,
     api: HfApi | None = None,
 ) -> str:
-    """Read the completed Markdown report with the caller's token."""
+    """Read an available Markdown report with the caller's token."""
     if auth is None or not auth.token:
         raise RuntimeError("Caller authentication is required to read the report")
 

@@ -52,7 +52,9 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
     assert "{{ $result.markdown }}" in payload
     assert "sendMessage" in payload
     assert "Add to chat" in payload
+    assert "Preparing Markdown" in payload
     assert "Open report" in payload
+    assert "Building HTML report" in payload
     assert "Markdown report" in payload
     assert "Browse archive" in payload
     assert "All research reports" in payload

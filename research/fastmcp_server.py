@@ -149,8 +149,8 @@ def register_research_app(
     ) -> dict[str, str]:
         auth = request_auth()
         job = await jobs.get(job_id, owner_id(auth, ctx.session_id))
-        if job is None or job.status != "completed":
-            raise RuntimeError("Research job is not available or complete")
+        if job is None or not job.markdown_report_uri:
+            raise RuntimeError("Research Markdown report is not available yet")
         markdown = await asyncio.to_thread(read_bucket_markdown, job, auth)
         context_markdown = (
             f"{markdown.rstrip()}\n\n---\n\n"
@@ -161,7 +161,7 @@ def register_research_app(
         return {
             "markdown": context_markdown,
             "message": (
-                "The research report is complete and has been added to context. "
+                "The research report has been added to context. "
                 "Please summarize the main findings and include links to the "
                 "source artifacts and generated Markdown and HTML reports."
             ),
