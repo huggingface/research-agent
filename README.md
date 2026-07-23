@@ -183,13 +183,24 @@ request-scoped FastMCP `Context`.
 
 ## Deployment bundles
 
-Python implementation files in `deploy/` are generated copies. After changing
-canonical sources, update and verify them with:
+`deploy/` contains only deployment-specific source such as Dockerfiles, Space
+metadata, and configuration. Build a self-contained upload context from those
+files and the canonical application sources with:
 
 ```bash
-python scripts/sync_deploy.py
-python scripts/sync_deploy.py --check
+uv run --project ../fast-agent python scripts/build_deploy.py
 ```
+
+Generated contexts are written under `.build/deploy/`, which is ignored by
+Git. Build a single target by naming it:
+
+```bash
+uv run --project ../fast-agent python scripts/build_deploy.py research-agent-two
+hf upload <owner>/<space> .build/deploy/research-agent-two --repo-type space
+```
+
+Never edit files under `.build/`; update the canonical sources in `research/`
+or the deployment-specific files in `deploy/`, then rebuild.
 
 The experimental app uses FastMCP's optional Apps dependencies. Run it locally
 with the same extra installed by the deployment image:

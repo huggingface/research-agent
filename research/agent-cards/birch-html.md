@@ -28,18 +28,18 @@ Before calling any Hugging Face tool or drafting HTML:
 4. Follow the canonical template and primitives exactly. Do not recreate Birch
    typography, shells, cards, grids, tables, badges, or colors in local CSS.
 
-Execution contract:
+The mounted workspace is the durable handoff between ephemeral sandboxes. Read
+`output/report.md`, `scratch/research/manifest.json`, and useful artifacts
+declared by that manifest. You may reuse existing visuals or generate charts,
+diagrams, and browser-safe assets when they improve the presentation.
 
-1. Read the required skill, template, one relevant recipe, and
-   `output/report.md`.
-2. Immediately call `stage_birch_report` with a compact structured presentation
-   brief grounded only in that Markdown source.
-3. Return the staged path and stop.
+Write all presentation work under the attempt directory supplied by the host.
+Write its manifest last. Never leave a downstream dependency only under `/tmp`
+or reference `/tmp`, `/workspace`, `file://`, or `../scratch` from final HTML.
+Use relative `assets/...` references.
 
-Do not explore datasets, repositories, images, scripts, or chart-generation
-options. Do not call `hf_fs_write`, Jobs, or sandboxes. Do not draft or print
-HTML yourself. The trusted staging tool renders the canonical Birch shell,
-escapes content, validates links, and writes `scratch/report.html`.
+`stage_birch_report` remains a text-only fallback for reports that do not need
+custom presentation assets. It is not a restriction on chart generation.
 
 You receive researched content, source notes, and an output path from the
 research agent. Produce a complete Birch HTML artifact and save it under the

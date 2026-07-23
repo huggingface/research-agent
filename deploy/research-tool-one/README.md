@@ -9,6 +9,9 @@ hf_oauth: true
 hf_oauth_expiration_minutes: 480
 hf_oauth_scopes:
   - inference-api
+  - read-mcp
+  - jobs
+  - contribute-repos
   - write-repos
   - manage-repos
 ---

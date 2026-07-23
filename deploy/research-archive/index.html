@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Research Archive</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f1efe8;
+      --paper: #fbfaf6;
+      --paper-2: #f6f3ec;
+      --text: #23211f;
+      --soft: #69645d;
+      --muted: #8b857c;
+      --line: #d8d3ca;
+      --accent: #8b6535;
+      --success: #61784c;
+      --warning: #a16f2c;
+      --danger: #9b5249;
+      --shadow: 0 10px 40px rgba(45, 39, 31, .08);
+      --serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181715;
+        --paper: #22211e;
+        --paper-2: #292722;
+        --text: #eee9df;
+        --soft: #bbb4a8;
+        --muted: #918b81;
+        --line: #3d3933;
+        --accent: #d5a86e;
+        --success: #9ab47e;
+        --warning: #d7a45e;
+        --danger: #d2897e;
+        --shadow: 0 12px 44px rgba(0, 0, 0, .25);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--serif);
+    }
+    button, input { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    .app { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+    .topbar {
+      position: sticky;
+      z-index: 10;
+      top: 0;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 18px 28px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--paper) 92%, transparent);
+      backdrop-filter: blur(14px);
+    }
+    .brand { min-width: 240px; }
+    .kicker, .label, .meta, .chip, .file-size {
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+    .kicker { color: var(--accent); font-size: 11px; }
+    .brand h1 { margin: 4px 0 0; font-size: 23px; font-weight: 500; }
+    .search {
+      width: min(520px, 100%);
+      margin-left: auto;
+      padding: 11px 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      outline: none;
+      background: var(--paper-2);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+    .search:focus { border-color: var(--accent); }
+    .layout {
+      width: min(1500px, 100%);
+      margin: 0 auto;
+      padding: 24px 28px 36px;
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: 22px;
+      min-height: 0;
+    }
+    .sidebar, .detail {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+      min-height: 0;
+    }
+    .sidebar { overflow: hidden; }
+    .sidebar-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .label { color: var(--muted); font-size: 10px; }
+    .count { color: var(--soft); font-family: var(--mono); font-size: 12px; }
+    .run-list { max-height: calc(100vh - 154px); overflow-y: auto; padding: 8px; }
+    .run {
+      width: 100%;
+      padding: 14px 12px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .run:hover { background: var(--paper-2); }
+    .run.active { border-color: var(--line); background: var(--paper-2); }
+    .run-top { display: flex; align-items: center; gap: 8px; }
+    .run-date { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+    .status-dot { width: 7px; height: 7px; margin-left: auto; border-radius: 99px; background: var(--muted); }
+    .status-dot.complete { background: var(--success); }
+    .status-dot.markdown { background: var(--warning); }
+    .run-title { margin-top: 8px; font-size: 16px; line-height: 1.3; }
+    .run-meta { margin-top: 8px; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+    .detail { overflow: hidden; display: flex; flex-direction: column; }
+    .empty {
+      min-height: 560px;
+      display: grid;
+      place-items: center;
+      padding: 40px;
+      color: var(--soft);
+      text-align: center;
+    }
+    .detail-head { padding: 28px 32px 20px; border-bottom: 1px solid var(--line); }
+    .detail-top { display: flex; align-items: center; gap: 10px; }
+    .detail-top .delete-button { margin-left: auto; }
+    .chip {
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      color: var(--soft);
+      font-size: 9px;
+    }
+    .detail h2 {
+      max-width: 920px;
+      margin: 16px 0 8px;
+      font-size: clamp(30px, 4vw, 48px);
+      font-weight: 500;
+      line-height: 1.06;
+      letter-spacing: -.025em;
+    }
+    .run-id { color: var(--muted); font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
+    .tabs {
+      display: flex;
+      gap: 0;
+      padding: 0 32px;
+      border-bottom: 1px solid var(--line);
+      overflow-x: auto;
+    }
+    .tab {
+      padding: 14px 16px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--soft);
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .tab.active { border-color: var(--accent); color: var(--text); }
+    .panel { padding: 26px 32px 40px; overflow: auto; }
+    .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--paper-2);
+    }
+    .card-value { margin-top: 10px; font-size: 28px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+    .action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--paper);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 11px;
+      text-decoration: none;
+    }
+    .action:hover { border-color: var(--accent); }
+    .delete-button {
+      display: inline-grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .delete-button:hover { border-color: var(--danger); color: var(--danger); background: color-mix(in srgb, var(--danger) 7%, transparent); }
+    .delete-button svg { width: 17px; height: 17px; }
+    .delete-button:disabled { cursor: wait; opacity: .55; }
+    dialog {
+      width: min(460px, calc(100% - 32px));
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      color: var(--text);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .28);
+    }
+    dialog::backdrop { background: rgba(20, 18, 15, .55); backdrop-filter: blur(3px); }
+    .dialog-body { padding: 26px 28px 20px; }
+    .dialog-body h3 { margin: 10px 0; font-size: 25px; font-weight: 500; }
+    .dialog-body p { margin: 0; color: var(--soft); line-height: 1.55; }
+    .dialog-run {
+      display: block;
+      margin-top: 16px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      overflow-wrap: anywhere;
+    }
+    .dialog-error { min-height: 18px; margin-top: 12px; color: var(--danger); font-family: var(--mono); font-size: 11px; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 28px; border-top: 1px solid var(--line); background: var(--paper-2); }
+    .dialog-button {
+      padding: 9px 14px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--paper);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .dialog-button.danger { border-color: var(--danger); background: var(--danger); color: white; }
+    .dialog-button:disabled { cursor: wait; opacity: .6; }
+    .markdown { max-width: 900px; font-size: 16px; line-height: 1.68; }
+    .markdown h1, .markdown h2, .markdown h3 { line-height: 1.15; font-weight: 500; }
+    .markdown h1 { font-size: 36px; }
+    .markdown h2 { margin-top: 40px; font-size: 27px; }
+    .markdown h3 { margin-top: 28px; font-size: 20px; }
+    .markdown a { color: var(--accent); }
+    .markdown code { font-family: var(--mono); font-size: .9em; }
+    .markdown pre { padding: 16px; overflow: auto; border: 1px solid var(--line); border-radius: 5px; background: var(--paper-2); }
+    .markdown table { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; }
+    .markdown th, .markdown td { padding: 9px 11px; border-bottom: 1px solid var(--line); text-align: left; }
+    .report-frame { width: 100%; height: 72vh; border: 1px solid var(--line); border-radius: 6px; background: white; }
+    .file-list { border-top: 1px solid var(--line); }
+    .file {
+      display: grid;
+      grid-template-columns: 80px minmax(0, 1fr) max-content;
+      gap: 14px;
+      align-items: center;
+      padding: 11px 4px;
+      border-bottom: 1px solid var(--line);
+    }
+    .file-kind { color: var(--accent); font-family: var(--mono); font-size: 10px; text-transform: uppercase; }
+    .file a { color: var(--text); font-family: var(--mono); font-size: 12px; text-decoration: none; overflow-wrap: anywhere; }
+    .file a:hover { color: var(--accent); }
+    .file-size { color: var(--muted); font-size: 9px; }
+    .loading { opacity: .6; }
+    @media (max-width: 900px) {
+      .topbar { align-items: flex-start; flex-wrap: wrap; padding: 16px 18px; }
+      .brand { min-width: 0; }
+      .search { order: 3; width: 100%; }
+      .layout { grid-template-columns: 1fr; padding: 16px; }
+      .run-list { max-height: 320px; }
+      .cards { grid-template-columns: 1fr; }
+      .detail-head, .panel { padding-left: 20px; padding-right: 20px; }
+      .tabs { padding: 0 8px; }
+      .report-frame { height: 68vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="kicker">Research Dispatch</div>
+        <h1>Research Archive</h1>
+      </div>
+      <input id="search" class="search" type="search" placeholder="Search reports, dates, workspaces…">
+    </header>
+    <main class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-head"><span class="label">Research folders</span><span id="count" class="count">—</span></div>
+        <div id="runs" class="run-list loading">Loading archive…</div>
+      </aside>
+      <section id="detail" class="detail">
+        <div class="empty"><div><div class="kicker">Research archive</div><p>Select a research folder to inspect its reports, workings, and generated assets.</p></div></div>
+      </section>
+    </main>
+  </div>
+  <dialog id="delete-dialog">
+    <div class="dialog-body">
+      <div class="kicker">Permanent deletion</div>
+      <h3>Delete this research report?</h3>
+      <p>This removes the report and all of its workings, assets, manifests, and traces from the research bucket. This cannot be undone.</p>
+      <span id="delete-run" class="dialog-run"></span>
+      <div id="delete-error" class="dialog-error" role="alert"></div>
+    </div>
+    <div class="dialog-actions">
+      <button id="delete-cancel" class="dialog-button" type="button">Cancel</button>
+      <button id="delete-confirm" class="dialog-button danger" type="button">Delete report</button>
+    </div>
+  </dialog>
+  <script>
+    const state = { runs: [], selected: null, detail: null, tab: "markdown", query: "" };
+    const $ = (id) => document.getElementById(id);
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const formatBytes = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n/1024).toFixed(1)} KB` : `${(n/1048576).toFixed(1)} MB`;
+
+    async function loadRuns() {
+      const response = await fetch("/api/runs");
+      const data = await response.json();
+      state.runs = data.runs;
+      $("count").textContent = `${data.count} runs`;
+      const requested = decodeURIComponent(location.hash.slice(1));
+      state.selected = state.runs.some(run => run.id === requested) ? requested : state.runs[0]?.id;
+      renderRuns();
+      if (state.selected) await selectRun(state.selected, false);
+    }
+
+    function filteredRuns() {
+      const query = state.query.trim().toLowerCase();
+      return query ? state.runs.filter(run => `${run.title} ${run.id} ${run.date}`.toLowerCase().includes(query)) : state.runs;
+    }
+
+    function renderRuns() {
+      const runs = filteredRuns();
+      $("runs").classList.remove("loading");
+      $("runs").innerHTML = runs.length ? runs.map(run => `
+        <button class="run ${run.id === state.selected ? "active" : ""}" data-run="${escapeHtml(run.id)}">
+          <div class="run-top"><span class="run-date">${escapeHtml(run.date)}</span><span class="status-dot ${run.status}"></span></div>
+          <div class="run-title">${escapeHtml(run.title)}</div>
+          <div class="run-meta">${run.asset_count} assets · ${run.trace_count} traces</div>
+        </button>`).join("") : `<div class="empty">No matching research folders.</div>`;
+      document.querySelectorAll("[data-run]").forEach(button => button.addEventListener("click", () => selectRun(button.dataset.run)));
+    }
+
+    async function selectRun(id, push = true) {
+      state.selected = id;
+      state.detail = null;
+      if (push) location.hash = encodeURIComponent(id);
+      renderRuns();
+      $("detail").innerHTML = `<div class="empty loading">Loading research folder…</div>`;
+      const response = await fetch(`/api/runs/${encodeURIComponent(id)}`);
+      state.detail = await response.json();
+      state.tab = state.detail.has_markdown ? "markdown" : state.detail.has_html ? "html" : "files";
+      renderDetail();
+    }
+
+    function renderDetail() {
+      const run = state.detail;
+      if (!run) return;
+      const tabs = ["markdown", "html", "files"];
+      $("detail").innerHTML = `
+        <div class="detail-head">
+          <div class="detail-top">
+            <span class="chip">${escapeHtml(run.status)}</span><span class="label">${escapeHtml(run.date)}</span>
+            <button class="delete-button" type="button" data-delete title="Delete report" aria-label="Delete ${escapeHtml(run.title)}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/>
+              </svg>
+            </button>
+          </div>
+          <h2>${escapeHtml(run.title)}</h2>
+          <div class="run-id">${escapeHtml(run.id)}</div>
+        </div>
+        <div class="tabs">${tabs.map(tab => `<button class="tab ${tab === state.tab ? "active" : ""}" data-tab="${tab}">${tab}</button>`).join("")}</div>
+        <div id="panel" class="panel"></div>`;
+      document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => { state.tab = button.dataset.tab; renderDetail(); }));
+      document.querySelector("[data-delete]").addEventListener("click", openDeleteDialog);
+      renderPanel();
+    }
+
+    function openDeleteDialog() {
+      $("delete-run").textContent = `${state.detail.title} — ${state.detail.id}`;
+      $("delete-error").textContent = "";
+      $("delete-dialog").showModal();
+    }
+
+    async function deleteSelectedRun() {
+      const run = state.detail;
+      if (!run) return;
+      $("delete-confirm").disabled = true;
+      $("delete-cancel").disabled = true;
+      $("delete-error").textContent = "";
+      try {
+        const response = await fetch(`/api/runs/${encodeURIComponent(run.id)}`, { method: "DELETE" });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.detail || "Could not delete this report.");
+        }
+        state.runs = state.runs.filter(item => item.id !== run.id);
+        state.selected = state.runs[0]?.id ?? null;
+        state.detail = null;
+        history.replaceState(null, "", state.selected ? `#${encodeURIComponent(state.selected)}` : location.pathname);
+        $("count").textContent = `${state.runs.length} runs`;
+        $("delete-dialog").close();
+        renderRuns();
+        if (state.selected) await selectRun(state.selected, false);
+        else $("detail").innerHTML = `<div class="empty"><div><div class="kicker">Research archive</div><p>No research folders remain.</p></div></div>`;
+      } catch (error) {
+        $("delete-error").textContent = error.message;
+      } finally {
+        $("delete-confirm").disabled = false;
+        $("delete-cancel").disabled = false;
+      }
+    }
+
+    function renderPanel() {
+      const run = state.detail;
+      if (state.tab === "markdown") {
+        $("panel").innerHTML = run.markdown_html ? `<article class="markdown">${run.markdown_html}</article>` : `<div class="empty">No Markdown report was produced.</div>`;
+      } else if (state.tab === "html") {
+        $("panel").innerHTML = run.html_url ? `<div class="actions" style="margin:0 0 14px"><a class="action" href="${run.html_url}" target="_blank">Open full report ↗</a><a class="action" href="${run.html_url}?download=true">Download report ↓</a></div><iframe class="report-frame" src="${run.html_url}" title="${escapeHtml(run.title)}" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>` : `<div class="empty">No HTML report was produced.</div>`;
+      } else {
+        $("panel").innerHTML = `<div class="file-list">${run.files.map(file => `
+          <div class="file"><span class="file-kind">${escapeHtml(file.kind)}</span><a href="/files/${encodeURIComponent(run.id)}/${file.path.split("/").map(encodeURIComponent).join("/")}" target="_blank">${escapeHtml(file.path)}</a><span class="file-size">${formatBytes(file.size)}</span></div>`).join("")}</div>`;
+      }
+    }
+
+    $("search").addEventListener("input", event => { state.query = event.target.value; renderRuns(); });
+    $("delete-cancel").addEventListener("click", () => $("delete-dialog").close());
+    $("delete-confirm").addEventListener("click", deleteSelectedRun);
+    $("delete-dialog").addEventListener("click", event => { if (event.target === $("delete-dialog")) $("delete-dialog").close(); });
+    window.addEventListener("hashchange", () => { const id = decodeURIComponent(location.hash.slice(1)); if (id && id !== state.selected) selectRun(id, false); });
+    loadRuns().catch(error => { $("runs").textContent = "Could not load archive."; $("detail").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`; });
+  </script>
+</body>
+</html>
