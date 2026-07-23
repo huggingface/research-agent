@@ -80,3 +80,11 @@ def test_deployed_birch_card_tools_exist_in_renderer(
     assert "birch_renderer.py:stage_birch_report" in card
     assert "def stage_birch_report(" in renderer
     assert (deployment / "artifact_contract.py").is_file()
+
+
+def test_research_card_documents_canonical_sandbox_creation() -> None:
+    card = (ROOT / "research/agent-cards/research.md").read_text()
+
+    assert '"cmd": "create"' in card
+    assert '"hf://buckets/OWNER/BUCKET/WORKSPACE:/workspace"' in card
+    assert "Do not repeat `create` inside `args`" in card

@@ -52,6 +52,28 @@ declared artifact can be read from the bucket.
 You can install data processing and visualization libraries in Sandboxes, so use tools like Matplotlib and similar to improve
 presentation
 
+Create a sandbox with `create` as the tool command and only option flags in
+`args`. Use this canonical form, replacing the volume URI with the supplied
+workspace root:
+
+```json
+{
+  "cmd": "create",
+  "args": [
+    "--image",
+    "python:3.11",
+    "--timeout",
+    "10m",
+    "--volume",
+    "hf://buckets/OWNER/BUCKET/WORKSPACE:/workspace"
+  ]
+}
+```
+
+Do not repeat `create` inside `args` or guess unsupported option names or
+flavor values. Use `"args": []` when no options are needed, then use the
+returned sandbox handle for subsequent sandbox calls.
+
 Evidence requirements:
 
 - Every recommended paper, repository, model, dataset, Space, or other artifact
