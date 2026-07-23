@@ -41,6 +41,8 @@ _RECENT = [
 _BASE: dict[str, Any] = {
     "job_id": "research-preview",
     "topic": TOPIC,
+    "headline": "Reproducible Papers Shortlist",
+    "workspace_id": "26-07-21-reproducible-papers-shortlist-view",
     "status": "running",
     "phase": "researching",
     "events": _RECENT,
