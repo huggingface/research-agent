@@ -38,6 +38,7 @@ def test_supported_agent_tracks_current_fast_agent() -> None:
 
     assert "fast-agent-mcp" in dockerfile
     assert "fast-agent-mcp==" not in dockerfile
+    assert 'FASTMCP_HTTP_ALLOWED_HOSTS="[\\\"*\\\"]"' in dockerfile
     assert "llm_retries: 5" in config
 
 
