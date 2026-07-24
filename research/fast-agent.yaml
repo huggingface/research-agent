@@ -1,4 +1,5 @@
 default_model: $system.default
+llm_retries: 5
 git_aware: true
 
 logger:

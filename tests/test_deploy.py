@@ -34,9 +34,11 @@ def test_deployments_request_the_approved_scopes() -> None:
 
 def test_supported_agent_tracks_current_fast_agent() -> None:
     dockerfile = (ROOT / "deploy/research-agent-two/Dockerfile").read_text()
+    config = (ROOT / "research/fast-agent.yaml").read_text()
 
     assert "fast-agent-mcp" in dockerfile
     assert "fast-agent-mcp==" not in dockerfile
+    assert "llm_retries: 5" in config
 
 
 @pytest.fixture(scope="module")
