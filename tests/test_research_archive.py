@@ -129,6 +129,9 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert "Research Archive" in page.text
     assert "research-archive-theme" in page.text
     assert "fonts.googleapis.com" in page.text
+    assert '<h2>${escapeHtml(run.title)}</h2>' not in page.text
+    assert 'class="detail-toolbar"' in page.text
+    assert "html-panel" in page.text
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/svg+xml")
     assert client.get("/health").json()["template_version"] == "1.0.0"
