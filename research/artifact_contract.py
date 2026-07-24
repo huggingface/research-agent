@@ -48,7 +48,7 @@ def verify_research_handoff(
     artifacts = validate_stage_manifest(
         manifest,
         stage="research",
-        allowed_prefixes=("scratch/research/", "output/report.md"),
+        allowed_prefixes=("scratch/research/", "output/"),
     )
     paths = {f"{workspace}/{path}" for path in artifacts}
     paths.add(f"{workspace}/output/report.md")

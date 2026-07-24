@@ -716,9 +716,17 @@ async def _run(
     *,
     timeout: float = 120,
 ) -> None:
-    execution = await sandbox.execute(
-        ShellExecutionRequest(command=command, timeout=timeout)
+    request = ShellExecutionRequest(
+        command=command,
+        terminate_after_idle=False,
     )
+    try:
+        execution = await asyncio.wait_for(
+            sandbox.execute(request),
+            timeout=timeout,
+        )
+    except TimeoutError as exc:
+        raise TimeoutError(f"Birch sandbox command timed out: {command}") from exc
     result = execution.result
     if execution.timed_out:
         raise TimeoutError(f"Birch sandbox command timed out: {command}")

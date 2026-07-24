@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from research.birch_renderer import (
@@ -9,6 +11,7 @@ from research.birch_renderer import (
     _claim_finalize_attempt,
     _prepare_html_draft,
     _render_birch_report,
+    _run,
     _sandbox_environment,
     _workspace_path,
     read_birch_skill_file,
@@ -91,6 +94,27 @@ def test_presentation_worker_is_stateless_and_uses_the_same_session_mount() -> N
     assert "use_history: false" in SANDBOX_AGENT_CARD
     assert "/workspace/scratch/research/manifest.json" in SANDBOX_AGENT_CARD
     assert "You may generate charts" in SANDBOX_AGENT_CARD
+
+
+@pytest.mark.asyncio
+async def test_birch_commands_use_managed_polling() -> None:
+    class SandboxSimulator:
+        request = None
+
+        async def execute(self, request):
+            self.request = request
+            return SimpleNamespace(
+                timed_out=False,
+                result=SimpleNamespace(exit_code=0, stdout="", stderr=""),
+            )
+
+    sandbox = SandboxSimulator()
+
+    await _run(sandbox, "build report", timeout=5)  # type: ignore[arg-type]
+
+    assert sandbox.request.command == "build report"
+    assert not sandbox.request.terminate_after_idle
+    assert sandbox.request.timeout is None
 
 
 def test_prepare_draft_repairs_fences_and_bare_style_marker() -> None:

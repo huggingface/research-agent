@@ -69,6 +69,12 @@ class FailingResearchRunner(ResearchRunner):
         raise RuntimeError("source endpoint returned HTTP 429")
 
 
+class FailingAfterMarkdownRunner(ResearchRunner):
+    async def invoke(self, job: ResearchJob, auth: None) -> str:
+        job.markdown_report = "# Completed findings"
+        raise RuntimeError("presentation handoff rejected a chart")
+
+
 class HeadlineResponse:
     def text_content(self) -> str:
         return "MCP Client Usage Trends"
@@ -130,6 +136,24 @@ async def test_runner_records_failure_as_terminal_narrative(tmp_path: Path) -> N
     assert job.status == "failed"
     assert "HTTP 429" in job.activity_summary
     assert "final report" in job.activity_summary
+
+
+@pytest.mark.asyncio
+async def test_runner_preserves_markdown_when_presentation_fails(
+    tmp_path: Path,
+) -> None:
+    runner = FailingAfterMarkdownRunner(
+        harness=None,  # type: ignore[arg-type]
+        home=tmp_path,
+    )
+    job = ResearchJob(id="research-test", topic="topic", owner_id="alice")
+
+    await runner.run(job, None)
+
+    assert job.status == "failed"
+    assert job.markdown_report == "# Completed findings"
+    assert "Markdown research report is ready" in job.activity_summary
+    assert "interactive HTML report could not be produced" in job.activity_summary
 
 
 @pytest.mark.asyncio

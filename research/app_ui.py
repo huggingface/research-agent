@@ -801,7 +801,8 @@ def build_research_ui(
 
             with Div(css_class="dispatch-body"):
                 with If(
-                    (STATE.job.phase == "reporting")
+                    STATE.job.markdown_report
+                    | (STATE.job.phase == "reporting")
                     | (STATE.job.phase == "wrapping_up")
                     | (STATE.job.status == "finalizing")
                     | (STATE.job.status == "completed")
@@ -827,6 +828,7 @@ def build_research_ui(
                         )
                         Button(
                             "{{ job.html_report_ready ? 'Open HTML report' : "
+                            "job.done ? 'HTML report unavailable' : "
                             "'Building HTML report…' }}",
                             variant="outline",
                             css_class="dispatch-report-action",

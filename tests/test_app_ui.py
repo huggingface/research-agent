@@ -54,6 +54,7 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
     assert "Add to chat" in payload
     assert "Preparing Markdown" in payload
     assert "Open HTML report" in payload
+    assert "HTML report unavailable" in payload
     assert "Building HTML report" in payload
     assert "Markdown report" in payload
     assert "dispatch-archive-link" in payload

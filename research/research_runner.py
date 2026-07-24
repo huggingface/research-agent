@@ -164,10 +164,16 @@ class ResearchRunner:
             raise
         except Exception as exc:
             job.error = str(exc)
-            job.set_activity_summary(
-                f"Research failed — {exc}. The run stopped before a final "
-                "report could be produced."
-            )
+            if job.markdown_report:
+                job.set_activity_summary(
+                    "The Markdown research report is ready, but the interactive "
+                    f"HTML report could not be produced — {exc}."
+                )
+            else:
+                job.set_activity_summary(
+                    f"Research failed — {exc}. The run stopped before a final "
+                    "report could be produced."
+                )
             job.add_event(f"Research failed: {exc}", kind="error")
             await try_export_trace(job, self.home)
             job.status = "failed"

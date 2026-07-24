@@ -45,6 +45,11 @@ class ResearchHandoffSimulator:
                 size=42,
                 type="file",
             ),
+            SimpleNamespace(
+                path="research-123/output/chart.png",
+                size=1024,
+                type="file",
+            ),
         ]
 
 
@@ -59,6 +64,7 @@ def test_research_handoff_verifies_declared_durable_artifacts() -> None:
                 "path": "scratch/research/data/summary.json",
                 "media_type": "application/json",
             },
+            {"path": "output/chart.png", "media_type": "image/png"},
         ],
     }
     job = ResearchJob(id="research-123", topic="topic", owner_id="alice")
@@ -79,10 +85,10 @@ def test_research_manifest_cannot_escape_its_artifact_boundary() -> None:
                 "schema_version": 1,
                 "stage": "research",
                 "status": "complete",
-                "artifacts": [{"path": "output/report.html"}],
+                "artifacts": [{"path": "other/report.html"}],
             },
             stage="research",
-            allowed_prefixes=("scratch/research/", "output/report.md"),
+            allowed_prefixes=("scratch/research/", "output/"),
         )
 
 
