@@ -27,13 +27,13 @@ def scopes(readme: Path) -> set[str]:
 
 
 def test_deployments_request_the_approved_scopes() -> None:
-    for deployment in ("research-tool-one", "research-agent-two"):
+    for deployment in ("researcher",):
         readme = ROOT / "deploy" / deployment / "README.md"
         assert scopes(readme) == EXPECTED_SCOPES
 
 
 def test_supported_agent_tracks_current_fast_agent() -> None:
-    dockerfile = (ROOT / "deploy/research-agent-two/Dockerfile").read_text()
+    dockerfile = (ROOT / "deploy/researcher/Dockerfile").read_text()
     config = (ROOT / "research/fast-agent.yaml").read_text()
 
     assert "fast-agent-mcp" in dockerfile
@@ -58,13 +58,13 @@ def built_deployments(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def test_deployment_sources_are_staged_from_canonical_sources(
     built_deployments: Path,
 ) -> None:
-    deployment = built_deployments / "research-agent-two"
+    deployment = built_deployments / "researcher"
 
     assert (deployment / "fastmcp_research_app.py").read_bytes() == (
         ROOT / "fastmcp_research_app.py"
     ).read_bytes()
-    assert (deployment / "research/agent-cards/research.md").read_bytes() == (
-        ROOT / "research/agent-cards/research.md"
+    assert (deployment / "research/agent-cards/researcher.md").read_bytes() == (
+        ROOT / "research/agent-cards/researcher.md"
     ).read_bytes()
     assert not (deployment / "research/sessions").exists()
 
@@ -92,7 +92,7 @@ def test_deployment_sources_are_staged_from_canonical_sources(
 def test_deployed_birch_card_tools_exist_in_renderer(
     built_deployments: Path,
 ) -> None:
-    deployment = built_deployments / "research-agent-two" / "research"
+    deployment = built_deployments / "researcher" / "research"
     card = (deployment / "agent-cards" / "birch-html.md").read_text()
     renderer = (deployment / "birch_renderer.py").read_text()
 
@@ -102,7 +102,7 @@ def test_deployed_birch_card_tools_exist_in_renderer(
 
 
 def test_research_card_documents_canonical_sandbox_creation() -> None:
-    card = (ROOT / "research/agent-cards/research.md").read_text()
+    card = (ROOT / "research/agent-cards/researcher.md").read_text()
 
     assert '"cmd": "create"' in card
     assert '"hf://buckets/OWNER/BUCKET/WORKSPACE:/workspace"' in card

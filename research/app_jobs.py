@@ -48,7 +48,7 @@ def format_elapsed(seconds: float) -> str:
 
 
 def display_activity_source(source: str | None) -> str:
-    return (source or "research/agent_loop").replace("/", " / ")
+    return (source or "researcher/agent_loop").replace("/", " / ")
 
 
 @dataclass(slots=True)
@@ -78,7 +78,7 @@ class ResearchJob:
     trace_error: str | None = None
     activity_summary: str = "Briefing the researcher"
     activity_summary_revision: int = 0
-    activity_source: str = "research/agent_loop"
+    activity_source: str = "researcher/agent_loop"
     activity_summaries: list[dict[str, Any]] = field(default_factory=list)
     event_count_total: int = 0
     turn_count: int = 0
@@ -199,7 +199,7 @@ class ResearchJob:
 
     def record_llm_step(self) -> None:
         self.turn_count += 1
-        self.activity_source = "research/agent_loop"
+        self.activity_source = "researcher/agent_loop"
 
     def set_activity_source(self, source: str) -> None:
         if source:
@@ -305,7 +305,7 @@ class ResearchJobStore:
             job.status = "running"
             job.phase = "researching"
             job.add_event(
-                "The research agent is getting started.",
+                "The Researcher is getting started.",
                 kind="Research",
                 now=self._clock(),
             )
@@ -398,7 +398,7 @@ def unavailable_snapshot(job_id: str) -> dict[str, Any]:
         "activity_progress": 100,
         "activity_summary": "This research run is no longer available.",
         "activity_summary_revision": 0,
-        "activity_source": "research/agent_loop",
+        "activity_source": "researcher/agent_loop",
         "activity_source_label": "research / agent_loop",
         "turn_count": 0,
         "result": None,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate or finalize one Birch draft without running the research agent."""
+"""Validate or finalize one Birch draft without running the Researcher."""
 
 from __future__ import annotations
 

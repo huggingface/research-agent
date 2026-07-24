@@ -1,5 +1,5 @@
 ---
-title: Research Agent Two
+title: Hugging Face Researcher
 emoji: 🔎
 colorFrom: blue
 colorTo: green
@@ -16,10 +16,10 @@ hf_oauth_scopes:
   - manage-repos
 ---
 
-# Research Agent Two
+# Hugging Face Researcher
 
-Experimental FastMCP App deployment for the fast-agent research agent.
+FastMCP App deployment for the Hugging Face Researcher.
 
-The model-visible `research` entrypoint returns an app immediately. The app
+The model-visible `researcher` entrypoint returns an app immediately. The app
 starts the research workflow through app-only backend tools and polls status to
 show an ongoing timeline of LLM/tool-loop events.

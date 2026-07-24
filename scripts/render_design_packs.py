@@ -138,7 +138,7 @@ def _root_index(output_root: Path, designs: tuple[HFDesign, ...]) -> None:
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Research Agent · Prefab design options</title>
+<title>Researcher · Prefab design options</title>
 <style>
   :root {{ color-scheme: light dark; font-family: system-ui,sans-serif; }}
   body {{ max-width: 800px; margin: 60px auto; padding: 24px; }}
@@ -146,7 +146,7 @@ def _root_index(output_root: Path, designs: tuple[HFDesign, ...]) -> None:
   a {{ color: #d97706; font-size: 24px; font-weight: 700; }}
   p {{ color: #6b7280; }}
 </style>
-<h1>Research Agent design options</h1>
+<h1>Researcher design options</h1>
 <p>Each pack contains matching light and dark Prefab renders.</p>
 <ol>{links}</ol>
 </html>

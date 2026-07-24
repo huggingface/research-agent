@@ -583,7 +583,7 @@ def _claim_finalize_attempt(job: ResearchJob | None) -> None:
     if job.birch_finalize_attempts >= MAX_FINALIZE_ATTEMPTS:
         raise RuntimeError(
             "Birch finalization retry limit reached. Return the latest validation "
-            "findings to the research agent instead of retrying again."
+            "findings to the Researcher instead of retrying again."
         )
     job.birch_finalize_attempts += 1
 

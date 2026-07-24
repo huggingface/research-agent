@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.deploy_spaces import DEPLOYMENTS, wait_for_spaces
+from scripts.deploy_spaces import DEPLOYMENTS, create_space, wait_for_spaces
 
 
 class SpaceApiSimulator:
@@ -17,6 +17,37 @@ class SpaceApiSimulator:
             sha=self.sha,
             runtime=SimpleNamespace(stage=self.stage),
         )
+
+
+class SpaceCreationSimulator:
+    def __init__(self) -> None:
+        self.call = None
+
+    def create_repo(self, *args, **kwargs) -> None:
+        self.call = (args, kwargs)
+
+
+def test_researcher_targets_clean_space() -> None:
+    deployment = DEPLOYMENTS["researcher"]
+
+    assert deployment.source == "researcher"
+    assert deployment.repo_id == "evalstate/researcher"
+
+
+def test_create_space_provisions_docker_sdk() -> None:
+    api = SpaceCreationSimulator()
+
+    create_space(api, DEPLOYMENTS["researcher"], token="token")
+
+    assert api.call == (
+        ("evalstate/researcher",),
+        {
+            "repo_type": "space",
+            "space_sdk": "docker",
+            "exist_ok": True,
+            "token": "token",
+        },
+    )
 
 
 def test_per_user_archive_reuses_canonical_archive_context() -> None:

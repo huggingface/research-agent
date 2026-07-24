@@ -69,7 +69,7 @@ class JobProgressHandler(ToolExecutionHandler):
         del progress, total
         source = self._activities.get(
             tool_call_id,
-            ("research/agent_loop", "Research agent", "Research", ""),
+            ("researcher/agent_loop", "Researcher", "Research", ""),
         )[0]
         self.job.set_activity_source(source)
         self.job.add_event(f"{source}: {message or 'working'}", kind="Activity")
@@ -84,8 +84,8 @@ class JobProgressHandler(ToolExecutionHandler):
         raw_source, source, category, completed = self._activities.pop(
             tool_call_id,
             (
-                "research/agent_loop",
-                "Research agent",
+                "researcher/agent_loop",
+                "Researcher",
                 "Research",
                 "A research step finished.",
             ),
@@ -98,7 +98,7 @@ class JobProgressHandler(ToolExecutionHandler):
         self.job.set_activity_source(
             next(
                 (activity[0] for activity in reversed(self._activities.values())),
-                "research/agent_loop",
+                "researcher/agent_loop",
             )
         )
         if _is_birch_delegation(*raw_source.split("/", 1)):
@@ -158,7 +158,7 @@ def _tool_activity(
     if tool_name == "agent_loop":
         return (
             raw_source,
-            "Research agent",
+            "Researcher",
             "Research",
             "The agent completed a research step.",
         )
@@ -268,7 +268,7 @@ def export_trace(job: ResearchJob, home: Path) -> None:
     result = exporter.export(
         ExportRequest(
             target=job.harness_session_id,
-            agent_name="research",
+            agent_name="researcher",
             output_path=output_path,
         )
     )

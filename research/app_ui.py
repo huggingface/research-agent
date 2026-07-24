@@ -532,7 +532,7 @@ BROADSHEET_CSS = """
 
 
 def _display_source(source: str | None) -> str:
-    return (source or "research/agent_loop").replace("/", " / ")
+    return (source or "researcher/agent_loop").replace("/", " / ")
 
 
 def _ui_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -671,7 +671,7 @@ def build_research_ui(
                             with Column(css_class="hf-brand-copy", gap=0):
                                 Text("Hugging Face", css_class="hf-brand-name")
                                 Text(
-                                    "Research Agent",
+                                    "Researcher",
                                     css_class="hf-brand-product",
                                 )
                     with Row(css_class="dispatch-stats", gap=2):

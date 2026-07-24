@@ -10,6 +10,7 @@ from research.fastmcp_server import (
     build_fast_agent,
     configure_research_ui_csp,
     enforce_production_isolation,
+    register_research_app,
     use_stateless_http,
 )
 from research.hf_design import HF_RESOURCE_DOMAINS
@@ -36,6 +37,23 @@ def test_production_uses_hub_classic_design() -> None:
     assert PRODUCTION_UI_DESIGN == "hub-classic"
 
 
+@pytest.mark.asyncio
+async def test_public_tool_is_hugging_face_researcher() -> None:
+    app = FastMCPApp("test")
+
+    register_research_app(
+        app,
+        jobs=object(),  # type: ignore[arg-type]
+        runner=object(),  # type: ignore[arg-type]
+        build_id="build",
+    )
+
+    tool = await app.get_tool("researcher")
+    assert tool is not None
+    assert tool.title == "Hugging Face Researcher"
+    assert await app.get_tool("research") is None
+
+
 @pytest.mark.parametrize("transport", ["http", "streamable-http"])
 def test_production_http_avoids_restart_bound_session_state(transport: str) -> None:
     assert use_stateless_http(transport)
@@ -49,12 +67,12 @@ def test_legacy_sse_retains_required_session_state() -> None:
 async def test_research_ui_csp_allows_google_font_resources() -> None:
     app = FastMCPApp("test")
 
-    @app.ui(name="research")
-    def research() -> dict[str, str]:
+    @app.ui(name="researcher")
+    def researcher() -> dict[str, str]:
         return {"status": "ok"}
 
     configure_research_ui_csp(app)
-    tool = await app.get_tool("research")
+    tool = await app.get_tool("researcher")
 
     assert tool is not None
     assert tool.meta["ui"]["csp"]["resourceDomains"] == list(HF_RESOURCE_DOMAINS)

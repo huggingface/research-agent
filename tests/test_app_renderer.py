@@ -14,27 +14,27 @@ from research.app_renderer import install_versioned_renderer
 @pytest.mark.asyncio
 async def test_renderer_uri_is_content_addressed_and_readable() -> None:
     mcp = FastMCP("test")
-    app = FastMCPApp("Research Agent")
+    app = FastMCPApp("Hugging Face Researcher")
 
-    @app.ui(name="research")
-    def research() -> PrefabApp:
+    @app.ui(name="researcher")
+    def researcher() -> PrefabApp:
         return PrefabApp(view=Heading("Research"))
 
     mcp.add_provider(app)
     digest = install_versioned_renderer(
         mcp,
-        app_name="Research Agent",
-        tool_name="research",
+        app_name="Hugging Face Researcher",
+        tool_name="researcher",
         build_id="a1b2c3d4",
     )
 
     async with Client(mcp) as client:
         tools = await client.list_tools()
-        tool = next(tool for tool in tools if tool.name == "research")
+        tool = next(tool for tool in tools if tool.name == "researcher")
         uri = tool.meta["ui"]["resourceUri"]
         contents = await client.read_resource(uri)
 
-    tool_digest = hash_tool("Research Agent", "research")
+    tool_digest = hash_tool("Hugging Face Researcher", "researcher")
     assert uri == (f"ui://prefab/tool/{tool_digest}/renderer-{digest}.html")
     assert contents[0].mimeType == "text/html;profile=mcp-app"
     assert "@prefecthq/prefab-ui@0.20.2" in contents[0].text

@@ -1,1 +1,1 @@
-"""Research agent fast-agent home support package."""
+"""Hugging Face Researcher support package."""

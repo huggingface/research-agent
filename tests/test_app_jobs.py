@@ -155,9 +155,9 @@ def test_snapshot_keeps_only_two_previous_narratives() -> None:
         "Summary 2",
         "Summary 1",
     ]
-    assert snapshot["activity_source_label"] == "research / agent_loop"
+    assert snapshot["activity_source_label"] == "researcher / agent_loop"
     assert all(
-        item["source_label"] == "research / agent_loop"
+        item["source_label"] == "researcher / agent_loop"
         for item in snapshot["recent_summaries"]
     )
 

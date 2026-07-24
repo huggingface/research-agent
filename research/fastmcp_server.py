@@ -1,4 +1,4 @@
-"""FastMCP App boundary for the research agent."""
+"""FastMCP App boundary for the Hugging Face Researcher."""
 
 from __future__ import annotations
 
@@ -33,7 +33,10 @@ PRODUCTION_UI_DESIGN: HFDesign = "hub-classic"
 STATELESS_TRANSPORTS = {"http", "streamable-http"}
 
 
-def configure_research_ui_csp(app: FastMCPApp, tool_name: str = "research") -> None:
+def configure_research_ui_csp(
+    app: FastMCPApp,
+    tool_name: str = "researcher",
+) -> None:
     """Allow the Google-hosted Hub fonts used by design variants."""
     csp = ResourceCSP(resource_domains=list(HF_RESOURCE_DOMAINS)).model_dump(
         by_alias=True,
@@ -73,8 +76,8 @@ def register_research_app(
     tasks = ResearchTaskRegistry()
 
     @app.ui(
-        name="research",
-        title="🤗 Research Agent",
+        name="researcher",
+        title="Hugging Face Researcher",
         description=(
             "Conduct sourced research on Hugging Face. Provide specific, "
             "goal-focused requests or tasks that state what should be established, "
@@ -83,7 +86,7 @@ def register_research_app(
             "references, citations, and reproductions."
         ),
     )
-    async def research(
+    async def researcher(
         topic: Annotated[
             str,
             Field(
@@ -177,7 +180,7 @@ def register_research_app(
 def build_fast_agent() -> FastAgent:
     """Build the production Harness without model-visible host filesystem access."""
     fast = FastAgent(
-        "Research Agent FastMCP App",
+        "Hugging Face Researcher",
         parse_cli_args=False,
         home=RESEARCH_HOME,
     )
@@ -197,7 +200,7 @@ async def main() -> None:
     async with fast.harness() as harness:
         enforce_production_isolation(fast)
         build_id = app_build_id(RESEARCH_HOME)
-        app = FastMCPApp("Research Agent")
+        app = FastMCPApp("Hugging Face Researcher")
         register_research_app(
             app,
             jobs=ResearchJobStore(),
@@ -206,15 +209,15 @@ async def main() -> None:
         )
 
         mcp = FastMCP(
-            "research-agent-app",
+            "researcher",
             auth=auth_provider(),
             instructions="Call `research` to open the live research app.",
         )
         mcp.add_provider(app)
         install_versioned_renderer(
             mcp,
-            app_name="Research Agent",
-            tool_name="research",
+            app_name="Hugging Face Researcher",
+            tool_name="researcher",
             build_id=build_id,
         )
         await mcp.run_http_async(

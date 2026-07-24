@@ -89,7 +89,7 @@ def test_short_query_does_not_offer_expansion() -> None:
         "activity_roll": [],
         "recent_summaries": [],
         "activity_summary": "Working.",
-        "activity_source": "research/agent_loop",
+        "activity_source": "researcher/agent_loop",
         "event_count": 1,
         "elapsed": "00:01",
         "turn_count": 0,
@@ -116,7 +116,7 @@ def test_hugging_face_design_options_include_brand_and_fonts(design: str) -> Non
         "activity_roll": [],
         "recent_summaries": [],
         "activity_summary": "Working.",
-        "activity_source": "research/agent_loop",
+        "activity_source": "researcher/agent_loop",
         "event_count": 1,
         "elapsed": "00:01",
         "turn_count": 0,
@@ -132,7 +132,7 @@ def test_hugging_face_design_options_include_brand_and_fonts(design: str) -> Non
 
     assert f"hf-{design}" in payload
     assert "Hugging Face" in payload
-    assert "Research Agent" in payload
+    assert "Researcher" in payload
     assert "data:image/svg+xml;base64," in payload
     assert "@media (max-width: 560px)" in payload
     assert app.stylesheets == [HF_FONT_STYLESHEET]

@@ -41,7 +41,7 @@ Use relative `assets/...` references.
 custom presentation assets. It is not a restriction on chart generation.
 
 You receive researched content, source notes, and an output path from the
-research agent. Produce a complete Birch HTML artifact and save it under the
+Researcher. Produce a complete Birch HTML artifact and save it under the
 provided `output/` bucket path. Use `scratch/` only for temporary drafts or
 intermediate files.
 

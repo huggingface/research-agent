@@ -63,7 +63,7 @@ class ResearchRunner:
                 async with self.harness.app().open(
                     AppOpenRequest(
                         session_id=job.harness_session_id,
-                        agent="research",
+                        agent="researcher",
                         metadata={
                             "job_id": job.id,
                             "research_workspace_id": job.artifact_id,
@@ -73,7 +73,7 @@ class ResearchRunner:
                     response = await session.invoke(
                         AgentRequest.text(
                             job.topic,
-                            agent="research",
+                            agent="researcher",
                             session_id=job.harness_session_id,
                             auth=auth,
                             params=RequestParams(
@@ -143,7 +143,7 @@ class ResearchRunner:
             await try_export_trace(job, self.home)
             job.status = "completed"
             job.phase = "completed"
-            job.set_activity_source("research/agent_loop")
+            job.set_activity_source("researcher/agent_loop")
             job.set_activity_summary(
                 "Research complete. The written summary and interactive "
                 "HTML report are ready to review."
@@ -154,7 +154,7 @@ class ResearchRunner:
             job.error = None
             job.status = "cancelled"
             job.phase = "cancelled"
-            job.set_activity_source("research/agent_loop")
+            job.set_activity_source("researcher/agent_loop")
             job.set_activity_summary(
                 "Research cancelled by the user. Partial notes and the session "
                 "trace collected so far have been kept; no final report was produced."

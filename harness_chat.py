@@ -12,7 +12,7 @@ from fast_agent import AgentRequest, FastAgent
 HERE = Path(__file__).parent
 
 fast = FastAgent(
-    "Research Agent Harness Chat",
+    "Researcher Harness Chat",
     parse_cli_args=False,
     home=HERE / "research",
 )
@@ -36,7 +36,7 @@ async def main() -> None:
                 response = await app_session.invoke(
                     AgentRequest.text(
                         message,
-                        agent="research",
+                        agent="researcher",
                         session_id=session_id,
                         metadata={"requested_session_id": session_id},
                     )

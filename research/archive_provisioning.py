@@ -88,7 +88,7 @@ def ensure_archive_space(
                 {
                     "key": "RESEARCH_ARCHIVE_MANAGED",
                     "value": "true",
-                    "description": "Managed by the Research Agent provisioner.",
+                    "description": "Managed by the Researcher provisioner.",
                 },
                 {
                     "key": "RESEARCH_ARCHIVE_TEMPLATE_VERSION",
@@ -98,7 +98,7 @@ def ensure_archive_space(
                 {
                     "key": "RESEARCH_ARCHIVE_BUCKET",
                     "value": bucket_id,
-                    "description": "Mounted Research Agent bucket.",
+                    "description": "Mounted Researcher bucket.",
                 },
             ],
             token=token,
@@ -131,7 +131,7 @@ def ensure_archive_space(
         space_id,
         "RESEARCH_ARCHIVE_BUCKET",
         bucket_id,
-        "Mounted Research Agent bucket.",
+        "Mounted Researcher bucket.",
         token,
     )
 

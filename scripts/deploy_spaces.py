@@ -28,9 +28,9 @@ class Deployment:
 
 
 DEPLOYMENTS = {
-    "research-agent-two": Deployment(
-        "research-agent-two",
-        "evalstate/research-agent-two",
+    "researcher": Deployment(
+        "researcher",
+        "evalstate/researcher",
     ),
     "research-tool-one": Deployment(
         "research-tool-one",
@@ -110,6 +110,16 @@ def wait_for_spaces(
         time.sleep(poll_seconds)
 
 
+def create_space(api: Any, deployment: Deployment, *, token: str) -> None:
+    api.create_repo(
+        deployment.repo_id,
+        repo_type="space",
+        space_sdk="docker",
+        exist_ok=True,
+        token=token,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -127,6 +137,11 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=900)
     parser.add_argument("--poll-seconds", type=float, default=5)
     parser.add_argument("--no-wait", action="store_true")
+    parser.add_argument(
+        "--create",
+        action="store_true",
+        help="Create missing Docker Spaces before upload.",
+    )
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--allow-unpushed", action="store_true")
     args = parser.parse_args()
@@ -151,6 +166,8 @@ def main() -> int:
     revisions: dict[str, str] = {}
     for name in names:
         deployment = DEPLOYMENTS[name]
+        if args.create:
+            create_space(api, deployment, token=token)
         commit = api.upload_folder(
             repo_id=deployment.repo_id,
             repo_type="space",

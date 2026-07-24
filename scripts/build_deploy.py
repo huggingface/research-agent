@@ -31,7 +31,7 @@ class Overlay:
 
 
 TARGETS = {
-    "research-agent-two": (
+    "researcher": (
         Overlay("fastmcp_research_app.py", "fastmcp_research_app.py"),
         Overlay("research", "research"),
     ),

@@ -28,7 +28,7 @@ def auth_provider() -> RemoteAuthProvider | None:
         authorization_servers=[AnyHttpUrl("https://huggingface.co")],
         base_url=AnyHttpUrl(resource_url),
         scopes_supported=scopes,
-        resource_name="research-agent-app",
+        resource_name="researcher",
     )
 
 

@@ -9,7 +9,7 @@ app_port: 7860
 
 # Research Archive Template
 
-Public, data-free template for private per-user Research Agent archive Spaces.
+Public, data-free template for private per-user Researcher archive Spaces.
 Provisioning duplicates this repository into the caller's namespace and mounts
 their private `research-agent` bucket at `/research`.
 

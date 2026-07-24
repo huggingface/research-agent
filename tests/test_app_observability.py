@@ -24,7 +24,7 @@ async def test_internal_progress_is_kept_in_a_two_line_activity_roll() -> None:
     handler = JobProgressHandler(job)
     call_id = await handler.on_tool_start(
         "agent_loop",
-        "research",
+        "researcher",
         None,
         "call",
     )
@@ -33,10 +33,10 @@ async def test_internal_progress_is_kept_in_a_two_line_activity_roll() -> None:
 
     roll = job.snapshot()["activity_roll"]
     assert [event["message"] for event in roll] == [
-        "research/agent_loop: step 3 (llm)",
-        "research/agent_loop: started",
+        "researcher/agent_loop: step 3 (llm)",
+        "researcher/agent_loop: started",
     ]
-    assert job.activity_source == "research/agent_loop"
+    assert job.activity_source == "researcher/agent_loop"
 
 
 @pytest.mark.asyncio
@@ -52,7 +52,7 @@ async def test_hugging_face_tool_events_keep_compact_progress_detail() -> None:
 
     await handler.on_tool_complete(call_id, True, None, None)
 
-    assert job.activity_source == "research/agent_loop"
+    assert job.activity_source == "researcher/agent_loop"
     assert job.events[-1]["kind"] == "Activity"
     assert job.events[-1]["message"] == "hf/hf_fs: completed"
 

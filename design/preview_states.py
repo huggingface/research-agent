@@ -52,7 +52,7 @@ _BASE: dict[str, Any] = {
         {
             "elapsed": "03:00",
             "kind": "Activity",
-            "message": "research/agent_loop: step 15 (llm)",
+            "message": "researcher/agent_loop: step 15 (llm)",
         },
         {
             "elapsed": "03:00",
@@ -72,7 +72,7 @@ _BASE: dict[str, Any] = {
         {
             "elapsed": "02:57",
             "kind": "Activity",
-            "message": "research/agent_loop: step 14 (tool)",
+            "message": "researcher/agent_loop: step 14 (tool)",
         },
         {
             "elapsed": "02:56",
@@ -108,7 +108,7 @@ _BASE: dict[str, Any] = {
         "draft collections are excluded from the final count."
     ),
     "activity_summary_revision": 4,
-    "activity_source": "research/agent_loop",
+    "activity_source": "researcher/agent_loop",
     "turn_count": 10,
     "result": None,
     "markdown_report": (
@@ -204,7 +204,7 @@ def preview_snapshot(state: str) -> dict[str, Any]:
                 {
                     "elapsed": "03:07",
                     "kind": "Activity",
-                    "message": "research/agent_loop: aborted",
+                    "message": "researcher/agent_loop: aborted",
                 },
                 {
                     "elapsed": "03:06",
@@ -240,7 +240,7 @@ def preview_snapshot(state: str) -> dict[str, Any]:
                 {
                     "elapsed": "03:12",
                     "kind": "Activity",
-                    "message": "research/agent_loop: cancelled by user",
+                    "message": "researcher/agent_loop: cancelled by user",
                 },
                 {
                     "elapsed": "03:11",

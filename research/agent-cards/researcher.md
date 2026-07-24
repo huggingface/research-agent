@@ -1,6 +1,6 @@
 ---
 type: agent
-name: research
+name: researcher
 description: Research Hugging Face ecosystem topics and save sourced outputs.
 servers:
   - hf

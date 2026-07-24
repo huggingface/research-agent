@@ -1,12 +1,12 @@
-# research-agent
+# Hugging Face Researcher
 
-A small `fast-agent` research home for a Hugging Face research agent.
+A `fast-agent` research application for Hugging Face.
 
 ## What is configured
 
 - `research/fast-agent.yaml` is the local fast-agent home.
 - The MCP target `hf` connects to `https://huggingface.co/mcp`.
-- `research/agent-cards/research.md` lets you publish/run the same agent
+- `research/agent-cards/researcher.md` lets you publish/run the same researcher
   declaratively.
 - `research/skills/birch-html/` is a vendored copy of the
   [Birch HTML skill](https://github.com/evalstate/birch-html/tree/main/skill)
@@ -136,12 +136,12 @@ fast-agent integration:
 ```python
 with harness.request_context(auth=auth):
     async with harness.app().open(
-        AppOpenRequest(session_id=job.id, agent="research")
+        AppOpenRequest(session_id=job.id, agent="researcher")
     ) as session:
         response = await session.invoke(
             AgentRequest.text(
                 job.topic,
-                agent="research",
+                agent="researcher",
                 session_id=job.id,
                 auth=auth,
             )
@@ -164,8 +164,8 @@ Everything else is an app concern kept outside that path:
 
 ### Live activity narrative
 
-The FastMCP App keeps a concise rolling description of the research agent's
-current work. The research AgentCard's `after_llm_call` hook captures the latest
+The FastMCP App keeps a concise rolling description of the Researcher's
+current work. The Researcher AgentCard's `after_llm_call` hook captures the latest
 provider-exposed reasoning, visible response text, and sanitized tool calls.
 `ActivityNarrator` updates the narrative after the first LLM step, every three
 steps, after 30 seconds of pending activity, and on the final response.
@@ -195,8 +195,8 @@ Generated contexts are written under `.build/deploy/`, which is ignored by
 Git. Build a single target by naming it:
 
 ```bash
-uv run --project ../fast-agent python scripts/build_deploy.py research-agent-two
-hf upload <owner>/<space> .build/deploy/research-agent-two --repo-type space
+uv run --project ../fast-agent python scripts/build_deploy.py researcher
+uv run --with huggingface_hub python scripts/deploy_spaces.py researcher --create
 ```
 
 Never edit files under `.build/`; update the canonical sources in `research/`
