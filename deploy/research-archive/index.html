@@ -373,7 +373,14 @@
     </div>
   </dialog>
   <script>
-    const state = { runs: [], selected: null, detail: null, tab: "markdown", query: "" };
+    const state = {
+      runs: [],
+      selected: null,
+      detail: null,
+      details: new Map(),
+      tab: "markdown",
+      query: "",
+    };
     const $ = (id) => document.getElementById(id);
     const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const formatBytes = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n/1024).toFixed(1)} KB` : `${(n/1048576).toFixed(1)} MB`;
@@ -411,9 +418,19 @@
       state.detail = null;
       if (push) location.hash = encodeURIComponent(id);
       renderRuns();
+      const cached = state.details.get(id);
+      if (cached) {
+        state.detail = cached;
+        state.tab = cached.has_html ? "html" : cached.has_markdown ? "markdown" : "files";
+        renderDetail();
+        return;
+      }
       $("detail").innerHTML = `<div class="empty loading">Loading research folder…</div>`;
       const response = await fetch(`/api/runs/${encodeURIComponent(id)}`);
-      state.detail = await response.json();
+      const detail = await response.json();
+      state.details.set(id, detail);
+      if (state.selected !== id) return;
+      state.detail = detail;
       state.tab = state.detail.has_html ? "html" : state.detail.has_markdown ? "markdown" : "files";
       renderDetail();
     }
@@ -501,6 +518,7 @@
           throw new Error(body.detail || "Could not delete this report.");
         }
         state.runs = state.runs.filter(item => item.id !== run.id);
+        state.details.delete(run.id);
         state.selected = state.runs[0]?.id ?? null;
         state.detail = null;
         history.replaceState(null, "", state.selected ? `#${encodeURIComponent(state.selected)}` : location.pathname);

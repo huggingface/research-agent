@@ -318,7 +318,7 @@ def create_app(root: Path = DEFAULT_RESEARCH_ROOT) -> FastAPI:
                     if download
                     else f'inline; filename="{path.name}"'
                 ),
-                "Cache-Control": "private, max-age=60",
+                "Cache-Control": "private, max-age=300",
             },
         )
 

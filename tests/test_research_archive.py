@@ -118,6 +118,7 @@ def test_artifact_download_uses_attachment_disposition(tmp_path: Path) -> None:
     assert download.headers["content-disposition"] == (
         'attachment; filename="report.html"'
     )
+    assert inline.headers["cache-control"] == "private, max-age=300"
 
 
 def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
@@ -140,6 +141,8 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert "navigator.clipboard" in page.text
     assert "Open in new window ↗" in page.text
     assert "Open full report" not in page.text
+    assert "details: new Map()" in page.text
+    assert "state.details.get(id)" in page.text
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/svg+xml")
-    assert client.get("/health").json()["template_version"] == "1.2.0"
+    assert client.get("/health").json()["template_version"] == "1.2.1"

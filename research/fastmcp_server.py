@@ -90,7 +90,7 @@ def register_research_app(
                 description=(
                     "The clearly stated goal of the research or reproduction task. "
                     "Provide important constraints and the preferred approach when "
-                    "specified."
+                    "specified. Work with the user to refine this before calling if needed. "
                 )
             ),
         ],
