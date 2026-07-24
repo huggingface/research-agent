@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -62,6 +63,15 @@ def test_deployment_sources_are_staged_from_canonical_sources(
     assert (legacy / "research_app.py").read_bytes() == (
         ROOT / "research/research_app.py"
     ).read_bytes()
+    imported = subprocess.run(
+        [sys.executable, "-c", "import research_app"],
+        cwd=legacy,
+        env={**os.environ, "PYTHONPATH": str(legacy)},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert imported.returncode == 0, imported.stdout + imported.stderr
 
     template = built_deployments / "research-archive-template"
     assert (template / "archive-template.json").read_bytes() == (
