@@ -134,4 +134,4 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert "html-panel" in page.text
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/svg+xml")
-    assert client.get("/health").json()["template_version"] == "1.0.0"
+    assert client.get("/health").json()["template_version"] == "1.1.0"
