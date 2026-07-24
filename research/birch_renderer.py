@@ -33,7 +33,6 @@ SANDBOX_SKILL_ROOT = "/opt/birch"
 SANDBOX_WORKSPACE_ROOT = "/workspace"
 BIRCH_STYLE_MARKER = "__BIRCH_SYSTEM_CSS__"
 MAX_FINALIZE_ATTEMPTS = 3
-FAST_AGENT_VERSION = "0.9.20"
 
 SANDBOX_AGENT_CARD = """---
 type: agent
@@ -430,9 +429,9 @@ Correct those findings rather than repeating the same presentation.
             "/opt/fast-agent.yaml",
             (Path(__file__).parent / "fast-agent.yaml").read_text(),
         )
-        version = os.getenv("BIRCH_FAST_AGENT_VERSION", FAST_AGENT_VERSION)
+        package = os.getenv("BIRCH_FAST_AGENT_PACKAGE", "fast-agent-mcp")
         command = (
-            f"uvx fast-agent-mcp=={shlex.quote(version)} go "
+            f"uvx {shlex.quote(package)} go "
             "--no-home --config-path /opt/fast-agent.yaml "
             "--card /opt/html-agent.md --agent birch-html-worker "
             "--model '$system.html' --shell "

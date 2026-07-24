@@ -32,6 +32,13 @@ def test_deployments_request_the_approved_scopes() -> None:
         assert scopes(readme) == EXPECTED_SCOPES
 
 
+def test_supported_agent_tracks_current_fast_agent() -> None:
+    dockerfile = (ROOT / "deploy/research-agent-two/Dockerfile").read_text()
+
+    assert "fast-agent-mcp" in dockerfile
+    assert "fast-agent-mcp==" not in dockerfile
+
+
 @pytest.fixture(scope="module")
 def built_deployments(tmp_path_factory: pytest.TempPathFactory) -> Path:
     output = tmp_path_factory.mktemp("deploy")
