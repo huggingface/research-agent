@@ -464,20 +464,8 @@ BROADSHEET_CSS = """
   .dispatch-header {
     padding: 18px 20px 12px;
   }
-  .dispatch-topbar,
   .dispatch-query-row {
     align-items: flex-start;
-  }
-  .dispatch-topbar {
-    flex-wrap: wrap;
-  }
-  .dispatch-stats {
-    order: 3;
-    width: 100%;
-    margin: 9px 0 0;
-  }
-  .dispatch-status-controls {
-    margin-left: auto;
   }
   .dispatch-query-row {
     flex-direction: column;
@@ -504,6 +492,20 @@ BROADSHEET_CSS = """
   }
   .dispatch-build {
     display: none;
+  }
+}
+@media (max-width: 560px) {
+  .dispatch-topbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .dispatch-stats {
+    order: 3;
+    width: 100%;
+    margin: 9px 0 0;
+  }
+  .dispatch-status-controls {
+    margin-left: auto;
   }
 }
 @media (max-width: 460px) {

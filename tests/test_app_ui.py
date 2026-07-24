@@ -133,6 +133,7 @@ def test_hugging_face_design_options_include_brand_and_fonts(design: str) -> Non
     assert "Hugging Face" in payload
     assert "Research Agent" in payload
     assert "data:image/svg+xml;base64," in payload
+    assert "@media (max-width: 560px)" in payload
     assert app.stylesheets == [HF_FONT_STYLESHEET]
 
 
