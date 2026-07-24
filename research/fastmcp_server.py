@@ -100,13 +100,17 @@ def register_research_app(
         ctx: MCPContext,
     ) -> PrefabApp:
         auth = request_auth()
-        job = await jobs.create(topic, owner_id(auth, ctx.session_id))
+        owner = owner_id(auth, ctx.session_id)
+        job = await jobs.create(topic, owner)
         identity = (
             auth.subject or "authenticated user"
             if auth is not None
             else "local development user"
         )
         job.add_event(f"Workspace access confirmed for {identity}.", kind="Setup")
+        result = await jobs.begin(job.id, owner)
+        if result is not None and result.started:
+            tasks.start(job.id, runner.run(job, auth))
         return build_research_ui(
             topic,
             job.snapshot(),
@@ -115,19 +119,6 @@ def register_research_app(
         )
 
     configure_research_ui_csp(app)
-
-    @app.tool()
-    async def start_research(
-        job_id: str,
-        ctx: MCPContext,
-    ) -> dict[str, Any]:
-        auth = request_auth()
-        result = await jobs.begin(job_id, owner_id(auth, ctx.session_id))
-        if result is None:
-            return unavailable_snapshot(job_id)
-        if result.started:
-            tasks.start(result.job.id, runner.run(result.job, auth))
-        return result.job.snapshot()
 
     @app.tool()
     async def research_status(

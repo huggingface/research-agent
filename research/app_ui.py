@@ -561,27 +561,15 @@ def build_research_ui(
         design = validate_design(design)
     on_mount = None
     if live:
-        on_mount = [
-            CallTool(
-                "start_research",
+        on_mount = SetInterval(
+            duration=1500,
+            while_=~STATE.job.done,
+            on_tick=CallTool(
+                "research_status",
                 arguments={"job_id": STATE.job_id},
-                on_success=[
-                    SetState("job", RESULT),
-                    SetState("poll_ms", RESULT.done.then("86400000", "1500")),
-                ],
+                on_success=SetState("job", RESULT),
             ),
-            SetInterval(
-                duration=STATE.poll_ms,
-                on_tick=CallTool(
-                    "research_status",
-                    arguments={"job_id": STATE.job_id},
-                    on_success=[
-                        SetState("job", RESULT),
-                        SetState("poll_ms", RESULT.done.then("86400000", "1500")),
-                    ],
-                ),
-            ),
-        ]
+        )
 
     cancel_action = CloseOverlay()
     if live:
@@ -647,7 +635,6 @@ def build_research_ui(
             "job": snapshot,
             "topic": topic,
             "job_id": snapshot["job_id"],
-            "poll_ms": "1500",
             "cancel_requested": False,
             "query_expanded": False,
             "query_toggleable": len(topic) > 90,

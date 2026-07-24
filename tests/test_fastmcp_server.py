@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from fast_agent import AgentAuth
-from fastmcp import FastMCPApp
+from fastmcp import Client, FastMCP, FastMCPApp
 from research.app_auth import effective_agent_auth
+from research.app_jobs import ResearchJobStore
 from research.fastmcp_server import (
     PRODUCTION_UI_DESIGN,
     build_fast_agent,
@@ -14,6 +17,16 @@ from research.fastmcp_server import (
     use_stateless_http,
 )
 from research.hf_design import HF_RESOURCE_DOMAINS
+
+
+class RunnerSimulator:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.job = None
+
+    async def run(self, job, auth) -> None:
+        self.job = job
+        self.started.set()
 
 
 @pytest.mark.asyncio
@@ -52,6 +65,29 @@ async def test_public_tool_is_hugging_face_researcher() -> None:
     assert tool is not None
     assert tool.title == "Hugging Face Researcher"
     assert await app.get_tool("research") is None
+
+
+@pytest.mark.asyncio
+async def test_researcher_starts_work_before_returning_ui() -> None:
+    mcp = FastMCP("test")
+    app = FastMCPApp("test")
+    jobs = ResearchJobStore()
+    runner = RunnerSimulator()
+    register_research_app(
+        app,
+        jobs=jobs,
+        runner=runner,  # type: ignore[arg-type]
+        build_id="build",
+    )
+    mcp.add_provider(app)
+
+    async with Client(mcp) as client:
+        await client.call_tool("researcher", {"topic": "Test the backend start"})
+        await asyncio.wait_for(runner.started.wait(), timeout=1)
+
+    assert runner.job is not None
+    assert runner.job.status == "running"
+    assert runner.job.phase == "researching"
 
 
 @pytest.mark.parametrize("transport", ["http", "streamable-http"])
