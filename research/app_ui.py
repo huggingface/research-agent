@@ -59,7 +59,7 @@ BROADSHEET_CSS = """
 }
 .dispatch-header {
   flex: none;
-  padding: 26px 36px 20px;
+  padding: 22px 36px 14px;
 }
 .dispatch-kicker,
 .dispatch-section-label,
@@ -82,15 +82,16 @@ BROADSHEET_CSS = """
   letter-spacing: .14em;
   text-transform: uppercase;
 }
-.dispatch-controls {
+.dispatch-status-controls {
   min-width: 0;
-  margin-left: auto;
+  margin-left: 10px;
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
 }
 .dispatch-stats {
   min-width: 0;
+  margin-left: auto;
   align-items: center;
   color: var(--muted-foreground);
 }
@@ -101,12 +102,6 @@ BROADSHEET_CSS = """
   letter-spacing: .035em;
   text-transform: uppercase;
   white-space: nowrap;
-}
-.dispatch-control-divider {
-  width: 1px;
-  height: 16px;
-  flex: none;
-  background: var(--border);
 }
 .dispatch-status {
   min-height: 25px;
@@ -140,7 +135,7 @@ BROADSHEET_CSS = """
   animation: dispatch-pulse 1.4s ease-in-out infinite;
 }
 .dispatch-header-separator {
-  margin: 20px 0 18px;
+  margin: 14px 0 16px;
 }
 .dispatch-query-row {
   min-width: 0;
@@ -211,42 +206,15 @@ BROADSHEET_CSS = """
   border-radius: 4px;
   background: var(--muted-foreground);
 }
-.dispatch-report-grid {
+.dispatch-report-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 26px;
-}
-.dispatch-report-card {
-  min-width: 0;
-  padding: 18px 14px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
-}
-.dispatch-report-card-title {
-  margin-top: 10px;
-  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
-  font-size: 18px;
-  font-weight: 500;
-  line-height: 1.25;
-}
-.dispatch-report-card-copy {
-  min-height: 42px;
-  margin-top: 10px;
-  color: var(--muted-foreground);
-  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
-  font-size: 14px;
-  line-height: 1.5;
-  text-wrap: pretty;
+  gap: 10px;
+  margin: 12px 0 22px;
 }
 .dispatch-report-action {
   width: 100%;
-  margin-top: 14px;
   color: var(--dispatch-accent);
-}
-.dispatch-archive-card {
-  grid-column: 1 / -1;
 }
 .dispatch-markdown-report {
   margin-top: 16px;
@@ -405,7 +373,7 @@ BROADSHEET_CSS = """
   text-wrap: pretty;
 }
 .dispatch-read-confirmation {
-  margin-top: 9px;
+  margin: -12px 0 18px;
   color: var(--muted-foreground);
   font-size: 11px;
 }
@@ -458,6 +426,18 @@ BROADSHEET_CSS = """
   font-size: 9px;
   opacity: .6;
 }
+.dispatch-archive-link {
+  height: auto;
+  min-height: 0;
+  margin-left: auto;
+  padding: 0;
+  color: var(--muted-foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+}
+.dispatch-archive-link + .dispatch-build {
+  margin-left: 8px;
+}
 .dispatch-dialog-actions {
   margin-top: 8px;
   justify-content: flex-end;
@@ -482,7 +462,7 @@ BROADSHEET_CSS = """
     box-shadow: none;
   }
   .dispatch-header {
-    padding: 22px 20px 18px;
+    padding: 18px 20px 12px;
   }
   .dispatch-topbar,
   .dispatch-query-row {
@@ -491,10 +471,13 @@ BROADSHEET_CSS = """
   .dispatch-topbar {
     flex-wrap: wrap;
   }
-  .dispatch-controls {
+  .dispatch-stats {
+    order: 3;
     width: 100%;
-    margin-top: 12px;
-    justify-content: flex-start;
+    margin: 9px 0 0;
+  }
+  .dispatch-status-controls {
+    margin-left: auto;
   }
   .dispatch-query-row {
     flex-direction: column;
@@ -505,9 +488,6 @@ BROADSHEET_CSS = """
   }
   .dispatch-body {
     padding: 0 20px;
-  }
-  .dispatch-report-grid {
-    grid-template-columns: 1fr;
   }
   .dispatch-log-footer {
     margin: 0;
@@ -527,16 +507,13 @@ BROADSHEET_CSS = """
   }
 }
 @media (max-width: 460px) {
-  .dispatch-controls {
+  .dispatch-report-actions {
+    grid-template-columns: 1fr;
+  }
+  .dispatch-status-controls {
     gap: 8px;
   }
-  .dispatch-stats {
-    width: 100%;
-    justify-content: space-between;
-  }
-  .dispatch-control-divider {
-    display: none;
-  }
+  .dispatch-stats { justify-content: space-between; }
   .dispatch-current-copy {
     font-size: 20px;
   }
@@ -695,21 +672,19 @@ def build_research_ui(
                                     "Research Agent",
                                     css_class="hf-brand-product",
                                 )
-                    with Row(css_class="dispatch-controls", gap=3):
-                        with Row(css_class="dispatch-stats", gap=2):
-                            Text(STATE.job.elapsed, css_class="dispatch-stat")
-                            Text("·", css_class="dispatch-stat")
-                            Text(
-                                "{{ job.event_count + ' events' }}",
-                                css_class="dispatch-stat",
-                            )
-                            Text("·", css_class="dispatch-stat")
-                            Text(
-                                "{{ job.turn_count + ' turns' }}",
-                                css_class="dispatch-stat",
-                            )
-                        Div(css_class="dispatch-control-divider")
-
+                    with Row(css_class="dispatch-stats", gap=2):
+                        Text(STATE.job.elapsed, css_class="dispatch-stat")
+                        Text("·", css_class="dispatch-stat")
+                        Text(
+                            "{{ job.event_count + ' events' }}",
+                            css_class="dispatch-stat",
+                        )
+                        Text("·", css_class="dispatch-stat")
+                        Text(
+                            "{{ job.turn_count + ' turns' }}",
+                            css_class="dispatch-stat",
+                        )
+                    with Row(css_class="dispatch-status-controls", gap=3):
                         with If(
                             (STATE.job.status == "queued")
                             | (STATE.job.status == "running")
@@ -829,84 +804,6 @@ def build_research_ui(
                     | (STATE.job.status == "finalizing")
                     | (STATE.job.status == "completed")
                 ):
-                    with Div(css_class="dispatch-report-grid"):
-                        with Column(css_class="dispatch-report-card", gap=0):
-                            Text("Markdown", css_class="dispatch-section-label")
-                            Text(
-                                "Research summary",
-                                css_class="dispatch-report-card-title",
-                            )
-                            Text(
-                                "{{ job.markdown_report ? "
-                                "'Ready to read or continue in chat.' : "
-                                "'The written report will appear here as soon "
-                                "as it is ready.' }}",
-                                css_class="dispatch-report-card-copy",
-                            )
-                            Button(
-                                "{{ job.markdown_report ? 'Add to chat' : "
-                                "'Preparing Markdown…' }}",
-                                variant="outline",
-                                css_class="dispatch-report-action",
-                                disabled=(
-                                    STATE.chat_sent | ~STATE.job.markdown_report
-                                ),
-                                onClick=read_report,
-                            )
-                            with If(STATE.chat_sent):
-                                Text(
-                                    "Added to chat.",
-                                    css_class="dispatch-read-confirmation",
-                                )
-                        with Column(css_class="dispatch-report-card", gap=0):
-                            Text("Interactive", css_class="dispatch-section-label")
-                            Text(
-                                "Full HTML report",
-                                css_class="dispatch-report-card-title",
-                            )
-                            Text(
-                                "{{ job.html_report_ready ? "
-                                "'Charts, tables and sources — ready to open.' : "
-                                "'The interactive report is being built from "
-                                "the research findings.' }}",
-                                css_class="dispatch-report-card-copy",
-                            )
-                            Button(
-                                "{{ job.html_report_ready ? 'Open report' : "
-                                "'Building HTML report…' }}",
-                                variant="outline",
-                                css_class="dispatch-report-action",
-                                disabled=~STATE.job.html_report_ready,
-                                onClick=OpenLink(STATE.job.html_report_url),
-                            )
-                        with If(STATE.job.archive_space_url):
-                            with Column(
-                                css_class=(
-                                    "dispatch-report-card dispatch-archive-card"
-                                ),
-                                gap=0,
-                            ):
-                                Text(
-                                    "Archive",
-                                    css_class="dispatch-section-label",
-                                )
-                                Text(
-                                    "All research reports",
-                                    css_class="dispatch-report-card-title",
-                                )
-                                Text(
-                                    "Browse this report alongside previous "
-                                    "research runs and their generated files.",
-                                    css_class="dispatch-report-card-copy",
-                                )
-                                Button(
-                                    "Browse archive",
-                                    variant="outline",
-                                    css_class="dispatch-report-action",
-                                    onClick=OpenLink(
-                                        STATE.job.archive_space_url,
-                                    ),
-                                )
                     with If(STATE.job.markdown_report):
                         with Div(css_class="dispatch-markdown-report"):
                             Text(
@@ -917,6 +814,28 @@ def build_research_ui(
                                 STATE.job.markdown_report,
                                 css_class="dispatch-markdown-body",
                             )
+                    with Div(css_class="dispatch-report-actions"):
+                        Button(
+                            "{{ job.markdown_report ? 'Add to chat' : "
+                            "'Preparing Markdown…' }}",
+                            variant="outline",
+                            css_class="dispatch-report-action",
+                            disabled=(STATE.chat_sent | ~STATE.job.markdown_report),
+                            onClick=read_report,
+                        )
+                        Button(
+                            "{{ job.html_report_ready ? 'Open HTML report' : "
+                            "'Building HTML report…' }}",
+                            variant="outline",
+                            css_class="dispatch-report-action",
+                            disabled=~STATE.job.html_report_ready,
+                            onClick=OpenLink(STATE.job.html_report_url),
+                        )
+                    with If(STATE.chat_sent):
+                        Text(
+                            "Added to chat.",
+                            css_class="dispatch-read-confirmation",
+                        )
 
                 with If("{{ job.done && job.activity_roll.length > 0 }}"):
                     with Div(css_class="dispatch-log dispatch-log-body"):
@@ -1009,6 +928,14 @@ def build_research_ui(
                         "{{ job.trace_path || 'Trace pending' }}",
                         css_class="dispatch-trace",
                     )
+                    with If(STATE.job.archive_space_url):
+                        Button(
+                            "Archive ↗",
+                            variant="link",
+                            size="xs",
+                            css_class="dispatch-archive-link",
+                            onClick=OpenLink(STATE.job.archive_space_url),
+                        )
                     Text(STATE.app_version, css_class="dispatch-build")
 
     return ui

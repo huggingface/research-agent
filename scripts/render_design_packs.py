@@ -38,6 +38,7 @@ DESIGN_NOTES = {
 }
 VIEWPORTS = {
     "desktop": (1000, 900, ("running", "completed", "failed", "cancelled")),
+    "embedded": (680, 900, ("running", "completed")),
     "mobile": (430, 900, ("running", "completed")),
 }
 

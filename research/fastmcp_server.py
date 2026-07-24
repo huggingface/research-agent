@@ -76,10 +76,11 @@ def register_research_app(
         name="research",
         title="🤗 Research Agent",
         description=(
-            "Start a sourced Research Dispatch run. Provide a specific, "
-            "goal-focused request that states what should be established or "
-            "compared, the relevant timeframe, constraints, and preferred "
-            "authoritative sources."
+            "Conduct sourced research on Hugging Face. Provide specific, "
+            "goal-focused requests or tasks that state what should be established, "
+            "analysed, reproduced, or compared. State authoritative sources, "
+            "timeframes, and constraints. Produces a comprehensive report with "
+            "references, citations, and reproductions."
         ),
     )
     async def research(
@@ -87,10 +88,9 @@ def register_research_app(
             str,
             Field(
                 description=(
-                    "A self-contained, well-scoped research goal. Include the "
-                    "subject, desired comparison or decision, relevant "
-                    "timeframe, important constraints, and preferred primary "
-                    "sources."
+                    "The clearly stated goal of the research or reproduction task. "
+                    "Provide important constraints and the preferred approach when "
+                    "specified."
                 )
             ),
         ],

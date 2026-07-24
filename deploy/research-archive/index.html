@@ -211,6 +211,23 @@
       white-space: nowrap;
     }
     .tab.active { border-color: #f59e0b; color: var(--text); font-weight: 600; }
+    .toolbar-actions { display: flex; align-items: center; gap: 6px; }
+    .toolbar-action {
+      min-height: 32px;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: linear-gradient(var(--paper), var(--paper-2));
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 9px;
+      text-decoration: none;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .toolbar-action:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+    .toolbar-action.copy-success { border-color: var(--success); color: var(--success); }
+    .toolbar-action.copy-error { border-color: var(--danger); color: var(--danger); }
     .panel { flex: 1; min-height: 0; padding: 26px 32px 40px; overflow: auto; }
     .panel.html-panel {
       display: flex;
@@ -218,7 +235,6 @@
       padding: 16px 18px 18px;
       overflow: hidden;
     }
-    .html-panel .actions { flex: none; margin: 0 0 12px; }
     .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
     .card {
       padding: 18px;
@@ -227,21 +243,6 @@
       background: var(--paper-2);
     }
     .card-value { margin-top: 10px; font-size: 28px; font-weight: 700; }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
-    .action {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 10px 14px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: linear-gradient(var(--paper), var(--paper-2));
-      color: var(--accent);
-      font-family: var(--mono);
-      font-size: 11px;
-      text-decoration: none;
-    }
-    .action:hover { border-color: var(--accent-line); background: var(--accent-soft); }
     .delete-button {
       display: inline-grid;
       width: 38px;
@@ -326,8 +327,10 @@
       .run-list { max-height: 320px; flex: none; }
       .cards { grid-template-columns: 1fr; }
       .detail-toolbar { flex-wrap: wrap; padding: 10px 14px; gap: 6px 12px; }
-      .detail-context { width: calc(100% - 48px); }
+      .detail-context { order: 1; width: calc(100% - 48px); }
+      .delete-button { order: 2; margin-left: auto; }
       .tabs { order: 3; width: 100%; margin-left: 0; }
+      .toolbar-actions { order: 4; width: 100%; }
       .panel { padding-left: 20px; padding-right: 20px; }
       .panel.html-panel { height: 72vh; min-height: 520px; padding: 14px; }
     }
@@ -411,7 +414,7 @@
       $("detail").innerHTML = `<div class="empty loading">Loading research folder…</div>`;
       const response = await fetch(`/api/runs/${encodeURIComponent(id)}`);
       state.detail = await response.json();
-      state.tab = state.detail.has_markdown ? "markdown" : state.detail.has_html ? "html" : "files";
+      state.tab = state.detail.has_html ? "html" : state.detail.has_markdown ? "markdown" : "files";
       renderDetail();
     }
 
@@ -426,6 +429,10 @@
             <span class="run-id" title="${escapeHtml(run.id)}">${escapeHtml(run.id)}</span>
           </div>
           <div class="tabs">${tabs.map(tab => `<button class="tab ${tab === state.tab ? "active" : ""}" data-tab="${tab}">${tab}</button>`).join("")}</div>
+          <div class="toolbar-actions">
+            ${run.has_markdown ? `<button class="toolbar-action" type="button" data-copy-markdown>Copy Markdown</button>` : ""}
+            ${run.has_html ? `<a class="toolbar-action" href="${run.html_url}" target="_blank" rel="noopener">Open in new window ↗</a><a class="toolbar-action" href="${run.html_url}?download=true">Download ↓</a>` : ""}
+          </div>
           <button class="delete-button" type="button" data-delete title="Delete report" aria-label="Delete ${escapeHtml(run.title)}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/>
@@ -434,8 +441,45 @@
         </div>
         <div id="panel" class="panel ${state.tab === "html" ? "html-panel" : ""}"></div>`;
       document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => { state.tab = button.dataset.tab; renderDetail(); }));
+      document.querySelector("[data-copy-markdown]")?.addEventListener("click", event => copyMarkdown(event.currentTarget));
       document.querySelector("[data-delete]").addEventListener("click", openDeleteDialog);
       renderPanel();
+    }
+
+    async function copyMarkdown(button) {
+      const original = "Copy Markdown";
+      try {
+        let copied = false;
+        if (navigator.clipboard?.writeText) {
+          try {
+            await navigator.clipboard.writeText(state.detail.markdown);
+            copied = true;
+          } catch {}
+        }
+        if (!copied) {
+          const textarea = document.createElement("textarea");
+          try {
+            textarea.value = state.detail.markdown;
+            textarea.style.position = "fixed";
+            textarea.style.opacity = "0";
+            document.body.appendChild(textarea);
+            textarea.select();
+            copied = document.execCommand("copy");
+          } finally {
+            textarea.remove();
+          }
+        }
+        if (!copied) throw new Error("Copy failed");
+        button.textContent = "Copied ✓";
+        button.classList.add("copy-success");
+      } catch (error) {
+        button.textContent = "Copy failed";
+        button.classList.add("copy-error");
+      }
+      window.setTimeout(() => {
+        button.textContent = original;
+        button.classList.remove("copy-success", "copy-error");
+      }, 1800);
     }
 
     function openDeleteDialog() {
@@ -479,7 +523,7 @@
       if (state.tab === "markdown") {
         $("panel").innerHTML = run.markdown_html ? `<article class="markdown">${run.markdown_html}</article>` : `<div class="empty">No Markdown report was produced.</div>`;
       } else if (state.tab === "html") {
-        $("panel").innerHTML = run.html_url ? `<div class="actions"><a class="action" href="${run.html_url}" target="_blank">Open full report ↗</a><a class="action" href="${run.html_url}?download=true">Download report ↓</a></div><iframe class="report-frame" src="${run.html_url}" title="${escapeHtml(run.title)}" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>` : `<div class="empty">No HTML report was produced.</div>`;
+        $("panel").innerHTML = run.html_url ? `<iframe class="report-frame" src="${run.html_url}" title="${escapeHtml(run.title)}" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>` : `<div class="empty">No HTML report was produced.</div>`;
       } else {
         $("panel").innerHTML = `<div class="file-list">${run.files.map(file => `
           <div class="file"><span class="file-kind">${escapeHtml(file.kind)}</span><a href="/files/${encodeURIComponent(run.id)}/${file.path.split("/").map(encodeURIComponent).join("/")}" target="_blank">${escapeHtml(file.path)}</a><span class="file-size">${formatBytes(file.size)}</span></div>`).join("")}</div>`;

@@ -134,7 +134,7 @@ HF_DESIGN_CSS = """
   line-height: 1;
   text-transform: uppercase;
 }
-.hf-design .dispatch-controls {
+.hf-design .dispatch-status-controls {
   gap: 10px;
 }
 .hf-design .dispatch-stat {
@@ -142,9 +142,6 @@ HF_DESIGN_CSS = """
   font-size: 10px;
   letter-spacing: 0;
   text-transform: none;
-}
-.hf-design .dispatch-control-divider {
-  background: var(--hf-line);
 }
 .hf-design .dispatch-status {
   min-height: 26px;
@@ -196,8 +193,6 @@ HF_DESIGN_CSS = """
 }
 .hf-design .dispatch-headline,
 .hf-design .dispatch-query,
-.hf-design .dispatch-report-card-title,
-.hf-design .dispatch-report-card-copy,
 .hf-design .dispatch-current-copy,
 .hf-design .dispatch-event-message {
   font-family: "Source Sans 3", "Source Sans Pro", ui-sans-serif, system-ui, sans-serif;
@@ -212,20 +207,11 @@ HF_DESIGN_CSS = """
   color: var(--hf-muted);
   font-size: 14px;
 }
-.hf-design .dispatch-report-card,
 .hf-design .dispatch-markdown-report,
 .hf-design .dispatch-log {
   border-color: var(--hf-line);
   background: var(--hf-surface-soft);
 }
-.hf-design .dispatch-report-card {
-  border-radius: 11px;
-}
-.hf-design .dispatch-report-card-title {
-  color: var(--hf-text);
-  font-weight: 600;
-}
-.hf-design .dispatch-report-card-copy,
 .hf-design .dispatch-time,
 .hf-design .dispatch-log-line,
 .hf-design .dispatch-trace,
@@ -274,10 +260,6 @@ HF_DESIGN_CSS = """
 }
 .hf-hub-classic .dispatch-history {
   margin-top: 18px;
-}
-.hf-hub-classic .dispatch-report-card {
-  background: linear-gradient(135deg, var(--hf-surface), var(--hf-surface-soft));
-  box-shadow: 0 1px 3px rgb(15 23 42 / .04);
 }
 .hf-hub-classic .dispatch-report-action {
   border-color: var(--hf-line);
@@ -347,28 +329,10 @@ HF_DESIGN_CSS = """
 .hf-spaces-gradient .dispatch-current-block .dispatch-rule-completed {
   background: var(--hf-yellow);
 }
-.hf-spaces-gradient .dispatch-report-card {
-  border: 0;
-  background: linear-gradient(145deg, #34469b, #4f46e5);
-  color: #fff;
-  box-shadow: 0 8px 20px rgb(59 70 155 / .18);
-}
-.hf-spaces-gradient .dispatch-report-card:nth-child(2) {
-  background: linear-gradient(145deg, #6634b8, #c02675);
-}
-.hf-spaces-gradient .dispatch-report-card .dispatch-section-label,
-.hf-spaces-gradient .dispatch-report-card-title,
-.hf-spaces-gradient .dispatch-report-card-copy {
-  color: #fff;
-}
-.hf-spaces-gradient .dispatch-report-card .dispatch-section-label,
-.hf-spaces-gradient .dispatch-report-card-copy {
-  opacity: .78;
-}
 .hf-spaces-gradient .dispatch-report-action {
-  border-color: rgb(255 255 255 / .32);
-  background: rgb(255 255 255 / .10);
-  color: #fff;
+  border-color: rgb(99 102 241 / .28);
+  background: rgb(99 102 241 / .08);
+  color: var(--dispatch-accent);
 }
 
 /* Option C: a compact, structured workspace inspired by dataset browsing. */
@@ -408,14 +372,6 @@ HF_DESIGN_CSS = """
   padding: 18px 28px;
   background:
     linear-gradient(90deg, var(--hf-surface-soft) 0 4px, transparent 4px);
-}
-.hf-dataset-studio .dispatch-report-grid {
-  margin-top: 0;
-}
-.hf-dataset-studio .dispatch-report-card {
-  border-radius: 8px;
-  background: var(--hf-surface);
-  box-shadow: 0 1px 3px rgb(15 23 42 / .05);
 }
 .hf-dataset-studio .dispatch-current-block {
   margin-top: 0;

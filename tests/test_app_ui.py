@@ -53,13 +53,16 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
     assert "sendMessage" in payload
     assert "Add to chat" in payload
     assert "Preparing Markdown" in payload
-    assert "Open report" in payload
+    assert "Open HTML report" in payload
     assert "Building HTML report" in payload
     assert "Markdown report" in payload
-    assert "Browse archive" in payload
-    assert "All research reports" in payload
+    assert "dispatch-archive-link" in payload
+    assert "dispatch-archive-card" not in payload
     assert "https://huggingface.co/spaces/alice/research-agent" in payload
     assert "dispatch-markdown-body" in payload
+    assert payload.index("dispatch-markdown-report") < payload.index(
+        "dispatch-report-actions"
+    )
     assert '"when": "{{ job.markdown_report }}"' in payload
     assert "openLink" in payload
     assert "Cancel this research run?" in payload
