@@ -1,316 +1,375 @@
 # Hugging Face Researcher
 
-A `fast-agent` research application for Hugging Face.
+Hugging Face Researcher is a `fast-agent` agent presented as an MCP App. It
+conducts sourced research with Hugging Face tools, keeps reusable workings in a
+private per-user bucket, and produces Markdown and interactive HTML reports.
 
-## What is configured
+- Production Space: <https://huggingface.co/spaces/evalstate/researcher>
+- MCP endpoint: <https://evalstate-researcher.hf.space/mcp>
+- Public report examples: <https://evalstate-researcher-reports.hf.space>
 
-- `research/fast-agent.yaml` is the local fast-agent home.
-- The MCP target `hf` connects to `https://huggingface.co/mcp`.
-- `research/agent-cards/researcher.md` lets you publish/run the same researcher
-  declaratively.
-- `research/skills/birch-html/` is a vendored copy of the
-  [Birch HTML skill](https://github.com/evalstate/birch-html/tree/main/skill)
-  used by the report-writing subagent.
-- `research_app.py` is a custom harness app entrypoint. It intercepts opened
-  sessions/invocations, derives the user and session id, verifies/creates the
-  user's Hugging Face bucket, writes marker files, and injects the working path
-  `hf://buckets/<username>/research-agent/<session-id>/` with `scratch/` and
-  `output/` subdirectories.
+## How it works
 
-## Prerequisites
+The application has three deliberately separate layers:
 
-Use the adjacent fast-agent checkout when running from this workspace, for
-example:
+1. **Agent** — `research/agent-cards/researcher.md` defines the model,
+   instructions, Hugging Face MCP server, and lifecycle hook.
+2. **Harness** — `ResearchRunner` invokes that AgentCard through the
+   protocol-neutral fast-agent Harness. `ResearchHarnessApp` wraps each
+   invocation to prepare the authenticated user's durable workspace.
+3. **MCP App** — `fastmcp_server.py` exposes the `researcher` MCP tool, starts a
+   background job, and projects job state into the Prefab UI.
 
-```bash
-uv run --project ../fast-agent python agent.py --model "$MODEL"
+```mermaid
+flowchart TD
+    A["MCP tools/call: researcher(topic)"] --> B["Create caller-bound job"]
+    B --> C["ResearchRunner invokes the researcher AgentCard"]
+    C --> D["ResearchHarnessApp intercepts the invocation"]
+    D --> E["Resolve Hugging Face identity and verify/create private bucket"]
+    E --> F["Inject scratch/output paths and forward caller auth to HF MCP"]
+    F --> G["Agent researches and writes output/report.md"]
+    G --> H["Verify manifest and durable artifacts"]
+    H --> I["Build and finalize the HTML report"]
+    I --> J["MCP App polling shows progress and completed reports"]
 ```
 
-For private Hugging Face MCP or bucket access, authenticate with either:
+### The agent
 
-```bash
-export HF_TOKEN=hf_...
-# or: hf auth login
+`research/agent-cards/researcher.md` is an ordinary AgentCard named
+`researcher`. It uses the Hugging Face MCP server and instructs the model to:
+
+- prefer authoritative Hugging Face and primary sources;
+- preserve reusable code, data, and charts under `scratch/research/`;
+- write the sourced report to `output/report.md`;
+- finish with a manifest that declares every durable artifact.
+
+The card is marked `default: true`. That only makes it the default when a
+fast-agent client loads the card set without explicitly selecting another
+agent. It does **not** define the production MCP tool or select what the
+Researcher Space publishes.
+
+The model-visible MCP App entry point is defined separately:
+
+```python
+@app.ui(name="researcher", title="Hugging Face Researcher")
+async def researcher(topic: str, ctx: MCPContext) -> PrefabApp:
+    ...
 ```
 
-### Private session archive
+An MCP App entry point is still a normal MCP tool. Apps-capable hosts render
+its UI resource; ordinary MCP clients can invoke it through `tools/call`.
+Supporting tools such as `research_status` and `cancel_research` are app-only
+and are called by the rendered UI.
 
-Completed, failed, and cancelled jobs always export a local Codex JSONL trace.
-On Hugging Face Spaces, prefer mounting a private bucket directly at the
-FastAgent session directory:
+### The Harness invocation
 
-```bash
-hf spaces volumes set <owner>/<space> \
-  -v hf://buckets/<owner>/<private-bucket>:/app/research/sessions
-```
-
-This persists the raw sessions and `research-traces/` exports without placing
-any archive token in the application environment.
-
-For deployments without a bucket volume, use the optional explicit archiver:
-
-```bash
-export RESEARCH_ARCHIVE_HF_URL=hf://buckets/<owner>/<private-bucket>
-export RESEARCH_ARCHIVE_TOKEN=hf_...
-```
-
-Use a dedicated fine-grained token with write access only to the archive
-bucket. The app uses this token only inside the trace archiver: it is not copied
-to `HF_TOKEN`, caller auth, MCP auth, workspace context, prompts, or
-model-visible tools. A missing bucket is created private; an existing public
-bucket is rejected.
-
-## Run in the TUI
-
-```bash
-uv run --project ../fast-agent fast-agent go \
-  --home research \
-  --agent-cards research/agent-cards \
-  --agent research
-```
-
-This is the normal fast-agent TUI path. For local interactive use that must go
-through the same harness app intercept and bucket verification as MCP serving,
-use the minimal harness runner instead:
-
-```bash
-uv run --project ../fast-agent python harness_chat.py
-```
-
-## Run one-off with the home/card
-
-```bash
-fast-agent go \
-  --home research \
-  --agent-cards research/agent-cards \
-  --agent research \
-  --message "Research the current Hugging Face MCP capabilities and write report.md"
-```
-
-## Publish as an MCP server
-
-Use the managed fast-agent server. This checkout of `../fast-agent` was adjusted
-so managed MCP publication still exposes AgentCard tools when
-`harness_app.entrypoint` is configured.
-
-```bash
-uv run --project ../fast-agent fast-agent serve \
-  --home research \
-  --agent-cards research/agent-cards \
-  --transport http \
-  --host 127.0.0.1 \
-  --port 8723 \
-  --instance-scope request
-```
-
-For multi-turn research, prefer `connection` scope:
-
-```bash
-uv run --project ../fast-agent fast-agent serve \
-  --home research \
-  --agent-cards research/agent-cards \
-  --transport http \
-  --host 127.0.0.1 \
-  --port 8723 \
-  --instance-scope connection
-```
-
-`fast-agent serve` does not have a `--agent` option. The `research` AgentCard is
-marked `default: true`, so it is the published/default agent. If you add more
-cards later, use the card-loading options to control what is exposed.
-
-The server exposes:
-
-- `research` — structured research job, routed through the harness intercept
-
-FastMCP App runs are caller-bound and retained in memory for 24 hours after
-completion. Reopening an old Claude Code chat renders the original run while it
-is retained. After expiry or a server restart, the historical app displays an
-unavailable message and never starts replacement research automatically.
-
-## Read the example
-
-Start with `research/research_runner.py`. Its `invoke()` method is the complete
-fast-agent integration:
+`ResearchRunner.invoke()` is the essential fast-agent integration:
 
 ```python
 with harness.request_context(auth=auth):
     async with harness.app().open(
-        AppOpenRequest(session_id=job.id, agent="researcher")
+        AppOpenRequest(
+            session_id=job.harness_session_id,
+            agent="researcher",
+            metadata={"research_workspace_id": job.artifact_id},
+        )
     ) as session:
         response = await session.invoke(
             AgentRequest.text(
                 job.topic,
                 agent="researcher",
-                session_id=job.id,
+                session_id=job.harness_session_id,
                 auth=auth,
             )
         )
 ```
 
-Everything else is an app concern kept outside that path:
+The configured `harness_app.entrypoint` wraps that invocation with
+`ResearchHarnessApp`. Before the request reaches the model, the wrapper:
+
+1. resolves the authoritative Hugging Face identity from caller auth;
+2. verifies or creates the private `<username>/research-agent` bucket;
+3. chooses a safe per-run workspace ID;
+4. writes workspace markers;
+5. optionally provisions the user's private report archive Space;
+6. injects the verified `root`, `scratch`, and `output` paths into the request;
+7. forwards the same caller bearer token to Hugging Face MCP tool calls.
+
+The resulting workspace is:
+
+```text
+hf://buckets/<username>/research-agent/<run-id>/
+├── scratch/
+│   ├── .workspace.json
+│   └── research/
+└── output/
+    ├── .keep
+    ├── report.md
+    └── report.html
+```
+
+If identity, bucket access, or marker creation fails, the Harness invocation
+fails before the research model is called. These paths are Hugging Face bucket
+paths, not directories on the Researcher Space filesystem.
+
+### The activity hook
+
+The Researcher AgentCard configures:
+
+```yaml
+tool_hooks:
+  after_llm_call: ../activity_hooks.py:capture_after_llm
+```
+
+After each LLM step, this hook captures provider-exposed reasoning, visible
+response text, and sanitized intended tool calls. It does not create the
+workspace and it does not feed tool results back into the narrative.
+
+`ActivityNarrator` periodically sends the captured batch and previous summary
+to the separate no-tools `activity-summarizer` AgentCard using `$system.fast`.
+The resulting short description powers the live “what the Researcher is doing”
+display without changing or blocking the main research loop.
+
+### Report generation
+
+The main agent writes Markdown and a research manifest into the authenticated
+bucket workspace. The runner verifies that handoff before presentation starts.
+
+The HTML stage then:
+
+1. mounts only the current bucket workspace into a short-lived Hugging Face
+   Sandbox;
+2. runs the vendored Birch HTML skill;
+3. validates the presentation manifest and generated HTML;
+4. embeds trusted styling and assets;
+5. writes the final `output/report.html` back to the same private workspace.
+
+Markdown remains available if HTML generation fails.
+
+## Production server
+
+The production Researcher Space does **not** run `fast-agent serve`. Its
+Docker command is:
+
+```text
+python fastmcp_research_app.py --host 0.0.0.0 --port 7860
+```
+
+`fastmcp_research_app.py` starts the custom FastMCP App server, which builds a
+fast-agent Harness and registers the `researcher` UI tool directly.
+
+Consequently:
+
+- production does not depend on a hypothetical `fast-agent serve --agent`
+  option;
+- AgentCard `default: true` is not used to choose the public MCP tool;
+- production does not depend on a local modification in `../fast-agent`;
+- the adjacent checkout is only a convenient development environment;
+- the deployment image installs the published `fast-agent-mcp` package.
+
+`fast-agent serve` can still publish AgentCards for other experiments, but it
+is not the architecture or recommended launch command for this application.
+
+## Local development
+
+The repository is developed alongside a fast-agent checkout:
+
+```text
+../fast-agent/
+research-agent/
+```
+
+Authenticate before using private Hugging Face MCP or bucket operations:
+
+```bash
+hf auth login
+# or:
+export HF_TOKEN=hf_...
+```
+
+### Run the production MCP App locally
+
+```bash
+uv run --project ../fast-agent \
+  --with 'fastmcp[apps]==3.4.4' \
+  --with 'prefab-ui==0.20.2' \
+  --with huggingface_hub \
+  python fastmcp_research_app.py \
+  --host 127.0.0.1 \
+  --port 8723
+```
+
+This is the local command closest to the deployed Space.
+
+### Run the agent in the fast-agent TUI
+
+```bash
+uv run --project ../fast-agent fast-agent go \
+  --home research \
+  --agent-cards research/agent-cards \
+  --agent researcher
+```
+
+This is useful for working on the AgentCard itself. To exercise the same
+Harness wrapper and bucket preparation used by the MCP App, use:
+
+```bash
+uv run --project ../fast-agent python harness_chat.py
+```
+
+### Run one request
+
+```bash
+uv run --project ../fast-agent fast-agent go \
+  --home research \
+  --agent-cards research/agent-cards \
+  --agent researcher \
+  --message "Research current Hugging Face MCP capabilities and write a sourced report."
+```
+
+## Source map
 
 | File | Responsibility |
 | --- | --- |
-| `fastmcp_server.py` | FastMCP App tools and server wiring |
-| `research_runner.py` | Protocol-neutral Harness invocation |
-| `app_jobs.py` | Replay-safe job handles, ownership, and expiry |
-| `app_ui.py` | Prefab presentation |
-| `app_auth.py` | OAuth at the MCP boundary |
-| `app_observability.py` | Optional timeline and trace hooks |
-| `research_app.py` | Harness interceptor that prepares the user workspace |
-| `activity_hooks.py` | Captures exposed reasoning and tool intent after LLM steps |
-| `activity_narrator.py` | Schedules rolling summaries with the fast model |
+| `research/agent-cards/researcher.md` | Main research agent |
+| `research/fast-agent.yaml` | Models, Hugging Face MCP, and Harness app configuration |
+| `research/fastmcp_server.py` | Public MCP App tools, OAuth boundary, and server wiring |
+| `research/research_runner.py` | Protocol-neutral Harness invocation and report lifecycle |
+| `research/research_app.py` | Harness wrapper that prepares and injects the user workspace |
+| `research/research_workspace.py` | Hugging Face identity, bucket verification, and markers |
+| `research/activity_hooks.py` | Captures exposed LLM activity after each step |
+| `research/activity_narrator.py` | Produces concise rolling activity summaries |
+| `research/app_jobs.py` | Caller-bound jobs, state transitions, ownership, and expiry |
+| `research/app_ui.py` | Prefab MCP App presentation |
+| `research/birch_renderer.py` | Isolated HTML generation and finalization |
+| `research/archive_provisioning.py` | Managed private archive Space provisioning |
+| `scripts/build_deploy.py` | Builds reproducible Space upload contexts |
+| `scripts/deploy_spaces.py` | Deploys and monitors named Spaces |
+| `scripts/publish_reports.py` | Copies allowlisted outputs into the public demo archive |
 
-### Live activity narrative
+## Durable storage
 
-The FastMCP App keeps a concise rolling description of the Researcher's
-current work. The Researcher AgentCard's `after_llm_call` hook captures the latest
-provider-exposed reasoning, visible response text, and sanitized tool calls.
-`ActivityNarrator` updates the narrative after the first LLM step, every three
-steps, after 30 seconds of pending activity, and on the final response.
+### Per-user research bucket
 
-Narration runs through the separate no-tools `activity-summarizer` AgentCard
-using `$system.fast` and a distinct Harness session, so it does not block or
-modify the main research tool loop. Each update receives only the previous
-narrative and latest captured LLM batch; tool results are not included.
-
-For an ordinary MCP App call that completes before its tool call returns, use
-`HarnessMCPAdapter.invoke_agent(ctx=...)`; it handles MCP auth, progress, and
-session translation. This example uses the explicit Harness API because the
-research job continues after `start_research` returns, so it must not retain a
-request-scoped FastMCP `Context`.
-
-## Deployment bundles
-
-`deploy/` contains only deployment-specific source such as Dockerfiles, Space
-metadata, and configuration. Build a self-contained upload context from those
-files and the canonical application sources with:
-
-```bash
-uv run --project ../fast-agent python scripts/build_deploy.py
-```
-
-Generated contexts are written under `.build/deploy/`, which is ignored by
-Git. Build a single target by naming it:
-
-```bash
-uv run --project ../fast-agent python scripts/build_deploy.py researcher
-uv run --with huggingface_hub python scripts/deploy_spaces.py researcher --create
-```
-
-Never edit files under `.build/`; update the canonical sources in `research/`
-or the deployment-specific files in `deploy/`, then rebuild.
-
-### Per-user report archive provisioning
-
-After a caller's private `<username>/research-agent` bucket is verified, the
-harness idempotently ensures a private `<username>/research-agent` Space exists.
-New Spaces are duplicated from the public template configured by
-`RESEARCH_ARCHIVE_TEMPLATE_SPACE` (default:
-`evalstate/research-archive-template`) with the bucket mounted read-write at
-`/research`.
-
-Both template and duplicate carry `archive-template.json`. The provisioner:
-
-- requires the template marker to match its expected version before duplication
-- refuses to modify an existing Space without a valid managed marker
-- reports `version_mismatch` without overwriting an older managed installation
-- configures the bucket volume atomically during duplication
-- retries safely on later requests and does not fail research if optional
-  archive provisioning fails
-
-Build and publish the data-free public template with:
-
-```bash
-uv run --project ../fast-agent python scripts/build_deploy.py \
-  research-archive-template
-hf upload <owner>/research-archive-template \
-  .build/deploy/research-archive-template \
-  --repo-type space
-```
-
-The experimental app uses FastMCP's optional Apps dependencies. Run it locally
-with the same extra installed by the deployment image:
-
-```bash
-uv run --project ../fast-agent --with 'fastmcp[apps]' \
-  python fastmcp_research_app.py
-```
-
-### Preview the Prefab UI without MCP or OAuth
-
-Render the real `build_research_ui()` component tree with static sample state
-and capture it with local Chrome:
-
-```bash
-uv run --project ../fast-agent --with 'fastmcp[apps]' \
-  python scripts/render_app_preview.py --state all
-```
-
-HTML and PNG files are written under `.artifacts/app-preview/`. Preview mode
-uses Prefab's bundled standalone renderer and disables the app's mount-time MCP
-tool calls, so it requires no server, token, OAuth flow, or network access.
-
-Curated design inputs live under `design/references/`: `baseline/` records the
-current implementation and `handoff/` contains the target design references.
-Generated `.artifacts/` previews are intentionally not design history and are
-ignored by Git.
-
-Render the three Hugging Face design-option packs in both light and dark modes:
-
-```bash
-uv run --project ../fast-agent --with 'fastmcp[apps]' \
-  --with prefab-ui python scripts/render_design_packs.py
-```
-
-Open `.artifacts/prefabtest-packs/index.html` to compare Hub Classic, Spaces
-Gradient, and Dataset Studio. These review variants do not change the
-production app until one is selected.
-
-Running jobs can be cancelled from the app header. Cancellation is coordinated
-through an in-memory task registry, matching the single-process Space
-deployment model.
-
-Birch drafts are written under the verified session's `scratch/` directory and
-finalized by `finalize_birch_artifact` in a short-lived Hugging Face Sandbox.
-The renderer mounts only that bucket session at `/workspace`, copies the
-vendored Birch Skill to `/opt/birch`, validates the HTML, and writes the final
-artifact under the same session's `output/` directory.
-
-Check host-compatible dark styling with:
-
-```bash
-uv run --project ../fast-agent --with 'fastmcp[apps]' \
-  python scripts/render_app_preview.py --state running --mode dark
-```
-
-## Verify identity and bucket use
-
-The `research_app.py` harness intercept runs before every agent invocation. It
-uses the caller bearer token/OAuth access token to look up the Hugging Face user,
-then checks or creates:
+Each authenticated user owns a private bucket:
 
 ```text
 <username>/research-agent
 ```
 
-and writes:
+Independent runs are stored beneath safe workspace IDs. The agent receives
+only the current run's paths and uses Hugging Face MCP tools to work with them.
+The production Harness does not expose the Space host shell or filesystem to
+the model.
 
-```text
-hf://buckets/<username>/research-agent/<session-id>/scratch/.workspace.json
-hf://buckets/<username>/research-agent/<session-id>/output/.keep
+### Private report archive
+
+After verifying the bucket, the Harness idempotently ensures a private
+`<username>/research-agent` archive Space. New archives are duplicated from
+`RESEARCH_ARCHIVE_TEMPLATE_SPACE` and mount the user's private bucket at
+`/research`.
+
+The provisioner:
+
+- validates `archive-template.json` before creating or modifying a Space;
+- refuses collisions with unmanaged Spaces;
+- configures the bucket volume during duplication;
+- reports version mismatches without silently overwriting older archives;
+- treats archive provisioning as optional so it cannot prevent research.
+
+### Private session traces
+
+Completed, failed, and cancelled jobs export local Codex JSONL traces. In
+production, the Space mounts a separate private bucket at the fast-agent
+session directory so raw sessions and `research-traces/` remain durable without
+an archive token in the app environment.
+
+For deployments without a mounted trace bucket, explicit archiving is
+available:
+
+```bash
+export RESEARCH_ARCHIVE_HF_URL=hf://buckets/<owner>/<private-trace-bucket>
+export RESEARCH_ARCHIVE_TOKEN=hf_...
 ```
 
-If that setup fails, the harness invocation fails before the LLM is called.
-If it succeeds, the verified `root`, `scratch`, and `output` paths are injected
-into the prompt and added to request metadata.
+Use a dedicated fine-grained token with write access only to that private
+bucket. Missing buckets are created private; existing public buckets are
+rejected.
 
-The bucket is not a local mount in the normal MCP path. It is a Hugging Face Hub
-bucket addressed by `hf://...`; the agent must use the Hugging Face MCP tools to
-read/write there.
+### Public report mirror
 
-The production Harness disables model-visible access to the Space host shell and
-filesystem. Relative `scratch/` and `output/` artifact paths always refer to the
-authenticated bucket session; they are never shared directories under
-`/app/research`.
+Public examples are copied from private storage into a separate public bucket.
+The publication layer never moves or mutates source files and excludes scratch
+work, traces, manifests, code, and unapproved data files.
+
+Preview one report:
+
+```bash
+python scripts/publish_reports.py --run <run-id>
+```
+
+Publish it:
+
+```bash
+python scripts/publish_reports.py --run <run-id> --publish
+```
+
+The public archive mounts only the public bucket and does so read-only.
+
+## Build and deploy
+
+Build reproducible deployment contexts under ignored `.build/`:
+
+```bash
+python scripts/build_deploy.py
+python scripts/build_deploy.py researcher
+```
+
+Deploy and monitor the production Space:
+
+```bash
+python scripts/deploy_spaces.py researcher --create
+```
+
+Deploy the data-free private archive template:
+
+```bash
+python scripts/deploy_spaces.py research-archive-template --create
+```
+
+Never edit generated `.build/` files. Update canonical sources under
+`research/` or deployment-specific files under `deploy/`, then rebuild.
+
+## Preview the UI
+
+Render real component trees with static states and local Chrome:
+
+```bash
+uv run --project ../fast-agent \
+  --with 'fastmcp[apps]==3.4.4' \
+  --with 'prefab-ui==0.20.2' \
+  python scripts/render_app_preview.py --state all
+```
+
+Generated HTML and screenshots are written under `.artifacts/app-preview/`.
+Preview mode does not require MCP, OAuth, or bucket access.
+
+Render the Hugging Face design packs:
+
+```bash
+uv run --project ../fast-agent \
+  --with 'fastmcp[apps]==3.4.4' \
+  --with 'prefab-ui==0.20.2' \
+  python scripts/render_design_packs.py
+```
+
+## Tests
+
+The CI suite covers Harness invocation, authentication, workspace isolation,
+artifact contracts, MCP App behavior, archive provisioning, UI rendering,
+deployment contexts, and public report publication:
+
+```bash
+pytest -q
+python scripts/build_deploy.py --output .build/ci-deploy
+```
