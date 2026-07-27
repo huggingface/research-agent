@@ -552,7 +552,7 @@
         $("panel").innerHTML = run.html_url ? `<iframe class="report-frame" src="${run.html_url}" title="${escapeHtml(run.title)}" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>` : `<div class="empty">No HTML report was produced.</div>`;
       } else {
         $("panel").innerHTML = `<div class="file-list">${run.files.map(file => `
-          <div class="file"><span class="file-kind">${escapeHtml(file.kind)}</span><a href="/files/${encodeURIComponent(run.id)}/${file.path.split("/").map(encodeURIComponent).join("/")}" target="_blank">${escapeHtml(file.path)}</a><span class="file-size">${formatBytes(file.size)}</span></div>`).join("")}</div>`;
+          <div class="file"><span class="file-kind">${escapeHtml(file.kind)}</span><a href="/files/${encodeURIComponent(run.id)}/${file.path.split("/").map(encodeURIComponent).join("/")}" target="_blank" rel="noopener noreferrer">${escapeHtml(file.path)}</a><span class="file-size">${formatBytes(file.size)}</span></div>`).join("")}</div>`;
       }
     }
 

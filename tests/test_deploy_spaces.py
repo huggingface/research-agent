@@ -57,6 +57,13 @@ def test_per_user_archive_reuses_canonical_archive_context() -> None:
     )
 
 
+def test_public_reports_reuses_canonical_archive_context() -> None:
+    assert DEPLOYMENTS["researcher-reports"].source == "research-archive"
+    assert DEPLOYMENTS["researcher-reports"].repo_id == (
+        "evalstate/researcher-reports"
+    )
+
+
 def test_wait_accepts_exact_running_revision() -> None:
     wait_for_spaces(
         SpaceApiSimulator(sha="target", stage="RUNNING"),

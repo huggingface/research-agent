@@ -123,7 +123,11 @@ def test_artifact_download_uses_attachment_disposition(tmp_path: Path) -> None:
     module = load_archive_module()
     report = tmp_path / "26-07-22-download-a123" / "output" / "report.html"
     report.parent.mkdir(parents=True)
-    report.write_text("<!doctype html><title>Download</title>")
+    report.write_text(
+        "<!doctype html><style>body{color:green}</style>"
+        "<script>fetch('/api/runs')</script>"
+        "<img src=x onerror=alert(1)>"
+    )
     client = TestClient(module.create_app(tmp_path))
     url = "/files/26-07-22-download-a123/output/report.html"
 
@@ -135,6 +139,38 @@ def test_artifact_download_uses_attachment_disposition(tmp_path: Path) -> None:
         'attachment; filename="report.html"'
     )
     assert inline.headers["cache-control"] == "private, max-age=300"
+    assert inline.headers["x-content-type-options"] == "nosniff"
+    assert inline.headers["referrer-policy"] == "no-referrer"
+    assert inline.headers["content-security-policy"] == module.ARTIFACT_CSP
+    assert download.headers["content-security-policy"] == module.ARTIFACT_CSP
+    for directive in (
+        "script-src 'none'",
+        "connect-src 'none'",
+        "object-src 'none'",
+        "form-action 'none'",
+        "base-uri 'none'",
+        "sandbox allow-popups allow-popups-to-escape-sandbox",
+    ):
+        assert directive in module.ARTIFACT_CSP
+
+
+def test_svg_artifact_is_restricted_when_opened_directly(tmp_path: Path) -> None:
+    module = load_archive_module()
+    image = tmp_path / "26-07-22-svg-a123" / "output" / "assets" / "chart.svg"
+    image.parent.mkdir(parents=True)
+    image.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)">'
+        "<script>alert(1)</script></svg>"
+    )
+    client = TestClient(module.create_app(tmp_path))
+
+    response = client.get("/files/26-07-22-svg-a123/output/assets/chart.svg")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    assert response.headers["content-security-policy"] == module.ARTIFACT_CSP
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["referrer-policy"] == "no-referrer"
 
 
 def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
@@ -157,8 +193,9 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert "navigator.clipboard" in page.text
     assert "Open in new window ↗" in page.text
     assert "Open full report" not in page.text
+    assert 'target="_blank" rel="noopener noreferrer"' in page.text
     assert "details: new Map()" in page.text
     assert "state.details.get(id)" in page.text
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/svg+xml")
-    assert client.get("/health").json()["template_version"] == "1.2.2"
+    assert client.get("/health").json()["template_version"] == "1.2.3"

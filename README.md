@@ -4,7 +4,7 @@ Hugging Face Researcher is an MCP App that uses an agent to conduct
 research on the Hugging Face Hub.
 
 It keeps reusable workings in a private per-user bucket, and produces
-markdown and interactive HTML reports. 
+markdown and interactive HTML reports.
 
 - Production Space: <https://huggingface.co/spaces/evalstate/researcher>
 - MCP endpoint: <https://evalstate-researcher.hf.space/mcp>
@@ -158,7 +158,7 @@ fast-agent Harness and registers the `researcher` UI tool directly.
 ### Run the production MCP App locally
 
 ```bash
-uv run --project ../fast-agent \
+uv run --with fast-agent-mcp \
   --with 'fastmcp[apps]==3.4.4' \
   --with 'prefab-ui==0.20.2' \
   --with huggingface_hub \
@@ -171,8 +171,11 @@ This is the local command closest to the deployed Space.
 
 ### Run the agent in the fast-agent TUI
 
+Install the published CLI with `uv tool install fast-agent-mcp`, or activate an
+environment that provides the `fast-agent` command. Then run:
+
 ```bash
-uv run --project ../fast-agent fast-agent go \
+fast-agent go \
   --home research \
   --agent-cards research/agent-cards \
   --agent researcher
@@ -182,13 +185,13 @@ This is useful for working on the AgentCard itself. To exercise the same
 Harness wrapper and bucket preparation used by the MCP App, use:
 
 ```bash
-uv run --project ../fast-agent python harness_chat.py
+uv run --with fast-agent-mcp python harness_chat.py
 ```
 
 ### Run one request
 
 ```bash
-uv run --project ../fast-agent fast-agent go \
+fast-agent go \
   --home research \
   --agent-cards research/agent-cards \
   --agent researcher \
@@ -285,6 +288,15 @@ Deploy the data-free private archive template:
 python scripts/deploy_spaces.py research-archive-template --create
 ```
 
+Deploy the public report archive:
+
+```bash
+python scripts/deploy_spaces.py researcher-reports
+```
+
+Its initial Space, read-only bucket mount, and environment configuration are
+provisioned by `scripts/publish_reports.py --publish`.
+
 Never edit generated `.build/` files. Update canonical sources under
 `research/` or deployment-specific files under `deploy/`, then rebuild.
 
@@ -293,7 +305,7 @@ Never edit generated `.build/` files. Update canonical sources under
 Render real component trees with static states and local Chrome:
 
 ```bash
-uv run --project ../fast-agent \
+uv run --with fast-agent-mcp \
   --with 'fastmcp[apps]==3.4.4' \
   --with 'prefab-ui==0.20.2' \
   python scripts/render_app_preview.py --state all
@@ -305,7 +317,7 @@ Preview mode does not require MCP, OAuth, or bucket access.
 Render the Hugging Face design packs:
 
 ```bash
-uv run --project ../fast-agent \
+uv run --with fast-agent-mcp \
   --with 'fastmcp[apps]==3.4.4' \
   --with 'prefab-ui==0.20.2' \
   python scripts/render_design_packs.py

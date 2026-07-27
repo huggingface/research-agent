@@ -28,6 +28,23 @@ TEMPLATE_MARKER = json.loads((APP_ROOT / "archive-template.json").read_text())
 SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 DATE_PREFIX = re.compile(r"^(?P<date>\d{2}-\d{2}-\d{2})-(?P<slug>.+?)-[a-f0-9]{4}$")
 HEADING = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
+ARTIFACT_CSP = (
+    "default-src 'none'; "
+    "base-uri 'none'; "
+    "object-src 'none'; "
+    "script-src 'none'; "
+    "style-src 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "font-src 'none'; "
+    "connect-src 'none'; "
+    "media-src 'none'; "
+    "frame-src 'none'; "
+    "worker-src 'none'; "
+    "manifest-src 'none'; "
+    "form-action 'none'; "
+    "frame-ancestors 'self'; "
+    "sandbox allow-popups allow-popups-to-escape-sandbox"
+)
 ALLOWED_TAGS = set(bleach.sanitizer.ALLOWED_TAGS) | {
     "article",
     "blockquote",
@@ -343,6 +360,9 @@ def create_app(
                     else f'inline; filename="{path.name}"'
                 ),
                 "Cache-Control": "private, max-age=300",
+                "Content-Security-Policy": ARTIFACT_CSP,
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
             },
         )
 

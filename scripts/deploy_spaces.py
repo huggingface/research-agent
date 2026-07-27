@@ -44,6 +44,10 @@ DEPLOYMENTS = {
         "research-archive-template",
         "evalstate/research-archive-template",
     ),
+    "researcher-reports": Deployment(
+        "research-archive",
+        "evalstate/researcher-reports",
+    ),
     "research-agent-archive": Deployment(
         "research-archive",
         "evalstate/research-agent",
