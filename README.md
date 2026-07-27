@@ -1,8 +1,10 @@
 # Hugging Face Researcher
 
-Hugging Face Researcher is a `fast-agent` agent presented as an MCP App. It
-conducts sourced research with Hugging Face tools, keeps reusable workings in a
-private per-user bucket, and produces Markdown and interactive HTML reports.
+Hugging Face Researcher is an MCP App that uses an agent to conduct
+research on the Hugging Face Hub.
+
+It keeps reusable workings in a private per-user bucket, and produces
+markdown and interactive HTML reports. 
 
 - Production Space: <https://huggingface.co/spaces/evalstate/researcher>
 - MCP endpoint: <https://evalstate-researcher.hf.space/mcp>
@@ -35,18 +37,13 @@ flowchart TD
 
 ### The agent
 
-`research/agent-cards/researcher.md` is an ordinary AgentCard named
+`research/agent-cards/researcher.md` is an ordinary Agent named
 `researcher`. It uses the Hugging Face MCP server and instructs the model to:
 
 - prefer authoritative Hugging Face and primary sources;
 - preserve reusable code, data, and charts under `scratch/research/`;
 - write the sourced report to `output/report.md`;
 - finish with a manifest that declares every durable artifact.
-
-The card is marked `default: true`. That only makes it the default when a
-fast-agent client loads the card set without explicitly selecting another
-agent. It does **not** define the production MCP tool or select what the
-Researcher Space publishes.
 
 The model-visible MCP App entry point is defined separately:
 
@@ -148,8 +145,7 @@ Markdown remains available if HTML generation fails.
 
 ## Production server
 
-The production Researcher Space does **not** run `fast-agent serve`. Its
-Docker command is:
+The hosting space is started with:
 
 ```text
 python fastmcp_research_app.py --host 0.0.0.0 --port 7860
@@ -158,34 +154,6 @@ python fastmcp_research_app.py --host 0.0.0.0 --port 7860
 `fastmcp_research_app.py` starts the custom FastMCP App server, which builds a
 fast-agent Harness and registers the `researcher` UI tool directly.
 
-Consequently:
-
-- production does not depend on a hypothetical `fast-agent serve --agent`
-  option;
-- AgentCard `default: true` is not used to choose the public MCP tool;
-- production does not depend on a local modification in `../fast-agent`;
-- the adjacent checkout is only a convenient development environment;
-- the deployment image installs the published `fast-agent-mcp` package.
-
-`fast-agent serve` can still publish AgentCards for other experiments, but it
-is not the architecture or recommended launch command for this application.
-
-## Local development
-
-The repository is developed alongside a fast-agent checkout:
-
-```text
-../fast-agent/
-research-agent/
-```
-
-Authenticate before using private Hugging Face MCP or bucket operations:
-
-```bash
-hf auth login
-# or:
-export HF_TOKEN=hf_...
-```
 
 ### Run the production MCP App locally
 
@@ -226,26 +194,6 @@ uv run --project ../fast-agent fast-agent go \
   --agent researcher \
   --message "Research current Hugging Face MCP capabilities and write a sourced report."
 ```
-
-## Source map
-
-| File | Responsibility |
-| --- | --- |
-| `research/agent-cards/researcher.md` | Main research agent |
-| `research/fast-agent.yaml` | Models, Hugging Face MCP, and Harness app configuration |
-| `research/fastmcp_server.py` | Public MCP App tools, OAuth boundary, and server wiring |
-| `research/research_runner.py` | Protocol-neutral Harness invocation and report lifecycle |
-| `research/research_app.py` | Harness wrapper that prepares and injects the user workspace |
-| `research/research_workspace.py` | Hugging Face identity, bucket verification, and markers |
-| `research/activity_hooks.py` | Captures exposed LLM activity after each step |
-| `research/activity_narrator.py` | Produces concise rolling activity summaries |
-| `research/app_jobs.py` | Caller-bound jobs, state transitions, ownership, and expiry |
-| `research/app_ui.py` | Prefab MCP App presentation |
-| `research/birch_renderer.py` | Isolated HTML generation and finalization |
-| `research/archive_provisioning.py` | Managed private archive Space provisioning |
-| `scripts/build_deploy.py` | Builds reproducible Space upload contexts |
-| `scripts/deploy_spaces.py` | Deploys and monitors named Spaces |
-| `scripts/publish_reports.py` | Copies allowlisted outputs into the public demo archive |
 
 ## Durable storage
 
