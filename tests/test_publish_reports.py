@@ -55,6 +55,14 @@ class WritableBytes(io.BytesIO):
         super().close()
 
 
+class BatchApiSimulator:
+    def __init__(self):
+        self.calls = []
+
+    def batch_bucket_files(self, bucket_id, **kwargs):
+        self.calls.append((bucket_id, kwargs))
+
+
 def test_discovery_allows_only_public_report_artifacts() -> None:
     module = load_module()
     root = "buckets/evalstate/research-agent/run-a/output"
@@ -94,7 +102,7 @@ def test_discovery_requires_both_reports() -> None:
         module.discover_artifacts(fs, "evalstate/research-agent", ["run-a"])
 
 
-def test_copy_is_idempotent_and_never_changes_source() -> None:
+def test_comparison_is_idempotent_and_never_changes_source() -> None:
     module = load_module()
     source = "buckets/evalstate/research-agent/run-a/output/report.md"
     destination = "buckets/evalstate/public/run-a/output/report.md"
@@ -105,11 +113,26 @@ def test_copy_is_idempotent_and_never_changes_source() -> None:
     )
 
     assert module.artifact_changed(fs, content, destination)
-    module.copy_artifact(fs, content, destination)
+    fs.files[destination] = content
 
     assert not module.artifact_changed(fs, content, destination)
     assert fs.files[source] == b"# Report"
     assert fs.files[destination] == b"# Report"
+
+
+def test_upload_batches_all_changed_files() -> None:
+    module = load_module()
+    api = BatchApiSimulator()
+    additions = [(b"one", "run-a/output/report.md"), (b"two", "run-b/report.md")]
+
+    module.batch_upload(api, "evalstate/public", additions, "token")
+
+    assert api.calls == [
+        (
+            "evalstate/public",
+            {"add": additions, "token": "token"},
+        )
+    ]
 
 
 def test_publication_rewrites_private_bucket_links() -> None:

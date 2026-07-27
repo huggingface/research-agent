@@ -174,9 +174,14 @@ def artifact_changed(
         return hashlib.sha256(content).digest() != digest(target)
 
 
-def copy_artifact(fs: HfFileSystem, content: bytes, destination: str) -> None:
-    with fs.open(destination, "wb") as target:
-        target.write(content)
+def batch_upload(
+    api: HfApi,
+    bucket_id: str,
+    additions: list[tuple[bytes, str]],
+    token: str,
+) -> None:
+    if additions:
+        api.batch_bucket_files(bucket_id, add=additions, token=token)
 
 
 def ensure_public_bucket(api: HfApi, bucket_id: str, token: str) -> bool:
@@ -343,16 +348,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     created_bucket = ensure_public_bucket(api, args.destination, token)
-    changed = 0
+    additions: list[tuple[bytes, str]] = []
     for artifact, content in prepared:
-        destination = (
-            f"{bucket_path(args.destination)}/{artifact.run_id}/"
-            f"{artifact.relative_path}"
-        )
+        relative_destination = f"{artifact.run_id}/{artifact.relative_path}"
+        destination = f"{bucket_path(args.destination)}/{relative_destination}"
         if artifact_changed(fs, content, destination):
-            copy_artifact(fs, content, destination)
-            changed += 1
-            print(f"  copied {artifact.run_id}/{artifact.relative_path}")
+            additions.append((content, relative_destination))
+    batch_upload(api, args.destination, additions, token)
+    for _, destination in additions:
+        print(f"  copied {destination}")
     created_space = ensure_public_space(
         api,
         space_id=args.space,
@@ -361,7 +365,7 @@ def main(argv: list[str] | None = None) -> int:
         token=token,
     )
     print(
-        f"Published {len(runs)} runs; {changed} files changed "
+        f"Published {len(runs)} runs; {len(additions)} files changed "
         f"(bucket {'created' if created_bucket else 'reused'}, "
         f"Space {'created' if created_space else 'reused'})."
     )
