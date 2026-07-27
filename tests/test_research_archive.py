@@ -152,6 +152,7 @@ def test_artifact_download_uses_attachment_disposition(tmp_path: Path) -> None:
         "sandbox allow-popups allow-popups-to-escape-sandbox",
     ):
         assert directive in module.ARTIFACT_CSP
+    assert "frame-ancestors" not in module.ARTIFACT_CSP
 
 
 def test_svg_artifact_is_restricted_when_opened_directly(tmp_path: Path) -> None:
@@ -198,4 +199,4 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert "state.details.get(id)" in page.text
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/svg+xml")
-    assert client.get("/health").json()["template_version"] == "1.2.3"
+    assert client.get("/health").json()["template_version"] == "1.2.4"

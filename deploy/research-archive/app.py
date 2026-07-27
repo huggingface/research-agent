@@ -42,7 +42,6 @@ ARTIFACT_CSP = (
     "worker-src 'none'; "
     "manifest-src 'none'; "
     "form-action 'none'; "
-    "frame-ancestors 'self'; "
     "sandbox allow-popups allow-popups-to-escape-sandbox"
 )
 ALLOWED_TAGS = set(bleach.sanitizer.ALLOWED_TAGS) | {
