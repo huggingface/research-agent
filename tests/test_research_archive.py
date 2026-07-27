@@ -49,7 +49,7 @@ def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
         "# Client Success Rates\n\n[Source](https://huggingface.co/)"
     )
     assert detail["research_manifest"] == {"stage": "research"}
-    assert "href=\"https://huggingface.co/\"" in detail["markdown_html"]
+    assert 'href="https://huggingface.co/"' in detail["markdown_html"]
     assert any(file["path"] == "output/assets/chart.svg" for file in detail["files"])
 
 
@@ -103,6 +103,22 @@ def test_delete_endpoint_removes_run_and_returns_404_afterward(tmp_path: Path) -
     assert client.delete(f"/api/runs/{run.name}").status_code == 404
 
 
+def test_read_only_archive_hides_delete_and_rejects_endpoint(tmp_path: Path) -> None:
+    module = load_archive_module()
+    run = tmp_path / "26-07-22-keep-me-a123"
+    (run / "output").mkdir(parents=True)
+    (run / "output" / "report.md").write_text("# Keep Me")
+    client = TestClient(module.create_app(tmp_path, read_only=True))
+
+    assert client.get("/api/config").json() == {"read_only": True}
+    response = client.delete(f"/api/runs/{run.name}")
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Archive is read-only"}
+    assert run.is_dir()
+    assert client.get("/health").json()["read_only"] is True
+
+
 def test_artifact_download_uses_attachment_disposition(tmp_path: Path) -> None:
     module = load_archive_module()
     report = tmp_path / "26-07-22-download-a123" / "output" / "report.html"
@@ -133,7 +149,7 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert "Research Archive" in page.text
     assert "research-archive-theme" in page.text
     assert "fonts.googleapis.com" in page.text
-    assert '<h2>${escapeHtml(run.title)}</h2>' not in page.text
+    assert "<h2>${escapeHtml(run.title)}</h2>" not in page.text
     assert 'class="detail-toolbar"' in page.text
     assert "html-panel" in page.text
     assert 'state.detail.has_html ? "html"' in page.text
@@ -145,4 +161,4 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert "state.details.get(id)" in page.text
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/svg+xml")
-    assert client.get("/health").json()["template_version"] == "1.2.1"
+    assert client.get("/health").json()["template_version"] == "1.2.2"

@@ -19,6 +19,11 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 APP_ROOT = Path(__file__).parent
 DEFAULT_RESEARCH_ROOT = Path(os.getenv("RESEARCH_ROOT", "/research"))
+DEFAULT_READ_ONLY = os.getenv("RESEARCH_ARCHIVE_READ_ONLY", "").lower() in {
+    "1",
+    "true",
+    "yes",
+}
 TEMPLATE_MARKER = json.loads((APP_ROOT / "archive-template.json").read_text())
 SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 DATE_PREFIX = re.compile(r"^(?P<date>\d{2}-\d{2}-\d{2})-(?P<slug>.+?)-[a-f0-9]{4}$")
@@ -126,8 +131,12 @@ class ResearchArchive:
             raise FileNotFoundError(run_id)
         summary = self.summarize(run)
         markdown_path = run / "output" / "report.md"
-        markdown_text = markdown_path.read_text(errors="replace") if markdown_path.is_file() else ""
-        research_manifest = self._read_json(run / "scratch" / "research" / "manifest.json")
+        markdown_text = (
+            markdown_path.read_text(errors="replace") if markdown_path.is_file() else ""
+        )
+        research_manifest = self._read_json(
+            run / "scratch" / "research" / "manifest.json"
+        )
         presentation_manifests = [
             self._read_json(path)
             for path in sorted(
@@ -218,7 +227,12 @@ class ResearchArchive:
         match = DATE_PREFIX.match(run_id)
         if match:
             try:
-                return datetime.strptime(match.group("date"), "%y-%m-%d").date().isoformat()
+                return (
+                    datetime.strptime(match.group("date"), "%y-%m-%d")
+                    .replace(tzinfo=UTC)
+                    .date()
+                    .isoformat()
+                )
             except ValueError:
                 pass
         return datetime.fromtimestamp(timestamp, UTC).date().isoformat()
@@ -256,7 +270,11 @@ def render_markdown(source: str) -> str:
     )
 
 
-def create_app(root: Path = DEFAULT_RESEARCH_ROOT) -> FastAPI:
+def create_app(
+    root: Path = DEFAULT_RESEARCH_ROOT,
+    *,
+    read_only: bool = DEFAULT_READ_ONLY,
+) -> FastAPI:
     archive = ResearchArchive(root)
     app = FastAPI(title="Research Archive", docs_url=None, redoc_url=None)
 
@@ -281,6 +299,10 @@ def create_app(root: Path = DEFAULT_RESEARCH_ROOT) -> FastAPI:
             "generated_at": datetime.now(UTC).isoformat(),
         }
 
+    @app.get("/api/config")
+    def config() -> dict[str, bool]:
+        return {"read_only": read_only}
+
     @app.get("/api/runs/{run_id}")
     def run(run_id: str) -> dict[str, Any]:
         try:
@@ -290,6 +312,8 @@ def create_app(root: Path = DEFAULT_RESEARCH_ROOT) -> FastAPI:
 
     @app.delete("/api/runs/{run_id}")
     def delete_run(run_id: str) -> dict[str, str]:
+        if read_only:
+            raise HTTPException(status_code=403, detail="Archive is read-only")
         try:
             archive.delete(run_id)
         except (FileNotFoundError, ValueError) as exc:
@@ -327,6 +351,7 @@ def create_app(root: Path = DEFAULT_RESEARCH_ROOT) -> FastAPI:
         return {
             "ok": root.is_dir(),
             "root": str(root),
+            "read_only": read_only,
             "template_version": TEMPLATE_MARKER["template_version"],
         }
 

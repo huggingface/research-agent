@@ -15,7 +15,7 @@ ARCHIVE_TEMPLATE_SPACE = os.getenv(
     "RESEARCH_ARCHIVE_TEMPLATE_SPACE",
     "evalstate/research-archive-template",
 )
-ARCHIVE_TEMPLATE_VERSION = "1.2.1"
+ARCHIVE_TEMPLATE_VERSION = "1.2.2"
 ARCHIVE_MARKER_PATH = "archive-template.json"
 ARCHIVE_SPACE_NAME = "research-agent"
 ARCHIVE_MOUNT_PATH = "/research"

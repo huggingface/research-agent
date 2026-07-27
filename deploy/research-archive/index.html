@@ -380,14 +380,22 @@
       details: new Map(),
       tab: "markdown",
       query: "",
+      readOnly: false,
     };
     const $ = (id) => document.getElementById(id);
     const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const formatBytes = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n/1024).toFixed(1)} KB` : `${(n/1048576).toFixed(1)} MB`;
 
     async function loadRuns() {
-      const response = await fetch("/api/runs");
-      const data = await response.json();
+      const [runsResponse, configResponse] = await Promise.all([
+        fetch("/api/runs"),
+        fetch("/api/config"),
+      ]);
+      const [data, config] = await Promise.all([
+        runsResponse.json(),
+        configResponse.json(),
+      ]);
+      state.readOnly = config.read_only;
       state.runs = data.runs;
       $("count").textContent = `${data.count} runs`;
       const requested = decodeURIComponent(location.hash.slice(1));
@@ -450,16 +458,16 @@
             ${run.has_markdown ? `<button class="toolbar-action" type="button" data-copy-markdown>Copy Markdown</button>` : ""}
             ${run.has_html ? `<a class="toolbar-action" href="${run.html_url}" target="_blank" rel="noopener">Open in new window ↗</a><a class="toolbar-action" href="${run.html_url}?download=true">Download ↓</a>` : ""}
           </div>
-          <button class="delete-button" type="button" data-delete title="Delete report" aria-label="Delete ${escapeHtml(run.title)}">
+          ${state.readOnly ? "" : `<button class="delete-button" type="button" data-delete title="Delete report" aria-label="Delete ${escapeHtml(run.title)}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/>
             </svg>
-          </button>
+          </button>`}
         </div>
         <div id="panel" class="panel ${state.tab === "html" ? "html-panel" : ""}"></div>`;
       document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => { state.tab = button.dataset.tab; renderDetail(); }));
       document.querySelector("[data-copy-markdown]")?.addEventListener("click", event => copyMarkdown(event.currentTarget));
-      document.querySelector("[data-delete]").addEventListener("click", openDeleteDialog);
+      document.querySelector("[data-delete]")?.addEventListener("click", openDeleteDialog);
       renderPanel();
     }
 
