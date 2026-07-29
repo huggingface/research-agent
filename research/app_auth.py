@@ -6,7 +6,6 @@ import os
 from typing import Any, cast
 
 from fast_agent import AgentAuth
-from huggingface_hub import get_token
 from fast_agent.mcp.auth.middleware import HFAuthHeaderMiddleware
 from fast_agent.mcp.server import HarnessMCPAdapter
 from fast_agent.mcp.server.common import (
@@ -15,8 +14,11 @@ from fast_agent.mcp.server.common import (
 )
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.huggingface import HuggingFaceTokenVerifier
+from huggingface_hub import get_token
 from pydantic import AnyHttpUrl
 from starlette.middleware import Middleware
+
+from .auth_diagnostics import AuthDiagnosticsMiddleware
 
 
 def auth_provider() -> RemoteAuthProvider | None:
@@ -36,7 +38,10 @@ def http_middleware() -> list[Middleware] | None:
     provider = normalize_serve_oauth_provider(os.environ.get("FAST_AGENT_SERVE_OAUTH"))
     if provider != "huggingface":
         return None
-    return [Middleware(cast(Any, HFAuthHeaderMiddleware))]
+    return [
+        Middleware(AuthDiagnosticsMiddleware),
+        Middleware(cast(Any, HFAuthHeaderMiddleware)),
+    ]
 
 
 def request_auth() -> AgentAuth | None:

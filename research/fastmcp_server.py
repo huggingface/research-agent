@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -12,7 +13,6 @@ from fastmcp import Context as MCPContext
 from fastmcp import FastMCP, FastMCPApp
 from fastmcp.apps.app import _make_resolver
 from fastmcp.tools import ToolResult
-from prefab_ui.app import PrefabApp
 from pydantic import Field
 
 from .app_artifacts import read_bucket_markdown
@@ -29,6 +29,7 @@ from .app_renderer import (
     install_versioned_renderer,
 )
 from .app_ui import build_research_ui
+from .auth_diagnostics import register_oauth_diagnostics
 from .hf_design import HF_RESOURCE_DOMAINS, HFDesign
 from .landing_page import register_landing_page
 from .research_runner import ResearchRunner
@@ -256,6 +257,8 @@ async def main() -> None:
             auth=auth_provider(),
             instructions="Call `research` to open the live research app.",
         )
+        if os.getenv("RESEARCH_OAUTH_DIAGNOSTICS") == "1":
+            register_oauth_diagnostics(mcp, request_auth)
         mcp.add_provider(app)
         register_widget_status_route(
             mcp,
