@@ -57,21 +57,27 @@ const isPrefabOutput = (value) =>
   value.$prefab !== null &&
   typeof value.$prefab === "object" &&
   !Array.isArray(value.$prefab) &&
-  typeof value.$prefab.version === "string" &&
+  value.$prefab.version === "0.3" &&
   value.view !== null &&
   typeof value.view === "object" &&
   !Array.isArray(value.view) &&
   value.state !== null &&
   typeof value.state === "object" &&
-  !Array.isArray(value.state);
+  !Array.isArray(value.state) &&
+  value.state.job !== null &&
+  typeof value.state.job === "object" &&
+  !Array.isArray(value.state.job) &&
+  typeof value.state.topic === "string" &&
+  typeof value.state.job_id === "string" &&
+  typeof value.state.app_version === "string";
 
 let standardResultSeen = false;
 let fallbackSent = false;
 let rendererReady = false;
 let graceElapsed = false;
+let ignoredToolResultLogged = false;
 
-const cleanup = () => {{
-  window.removeEventListener("message", onToolResult, true);
+const stopRecovery = () => {{
   window.removeEventListener("openai:set_globals", onOpenAIUpdate);
   clearTimeout(graceTimer);
   clearTimeout(expiryTimer);
@@ -80,14 +86,24 @@ const cleanup = () => {{
 const onToolResult = (event) => {{
   const message = event.data;
   if (
-    event.source === window.parent &&
-    message?.jsonrpc === "2.0" &&
-    message?.method === "ui/notifications/tool-result" &&
-    isPrefabOutput(message.params?.structuredContent)
-  ) {{
-    standardResultSeen = true;
-    cleanup();
+    event.source !== window.parent ||
+    message?.jsonrpc !== "2.0" ||
+    message?.method !== "ui/notifications/tool-result"
+  ) return;
+
+  if (!isPrefabOutput(message.params?.structuredContent)) {{
+    event.stopImmediatePropagation();
+    if (!ignoredToolResultLogged) {{
+      ignoredToolResultLogged = true;
+      console.warn(
+        "[research-prefab] ignored non-Prefab tool-result notification"
+      );
+    }}
+    return;
   }}
+
+  standardResultSeen = true;
+  stopRecovery();
 }};
 
 const recover = () => {{
@@ -102,7 +118,7 @@ const recover = () => {{
   if (!isPrefabOutput(output)) return;
 
   fallbackSent = true;
-  cleanup();
+  stopRecovery();
 
   // Prefab 0.20.2 consumes host results through this version-pinned transport.
   window.dispatchEvent(new MessageEvent("message", {{
@@ -134,7 +150,7 @@ const graceTimer = setTimeout(() => {{
   graceElapsed = true;
   recover();
 }}, 3000);
-const expiryTimer = setTimeout(cleanup, 30000);
+const expiryTimer = setTimeout(stopRecovery, 30000);
 
 await import({renderer_url});
 rendererReady = true;
@@ -162,6 +178,7 @@ class RendererUriTransform(Transform):
         ui["resourceUri"] = self.resource_uri
         meta["ui"] = ui
         meta["ui/resourceUri"] = self.resource_uri
+        meta["openai/widgetAccessible"] = True
         return tool.model_copy(
             update={
                 "meta": meta,

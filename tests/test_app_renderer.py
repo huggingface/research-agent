@@ -56,7 +56,8 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
     tool_digest = hash_tool("Hugging Face Researcher", "researcher")
     assert uri == (f"ui://prefab/tool/{tool_digest}/renderer-{digest}.html")
     assert tool.outputSchema == PREFAB_OUTPUT_SCHEMA
-    assert not any(key.startswith("openai/") for key in tool.meta)
+    assert tool.meta["openai/widgetAccessible"] is True
+    assert "openai/outputTemplate" not in tool.meta
     assert tool.meta["ui/resourceUri"] == uri
     assert result.structured_content is not None
     assert {"$prefab", "view", "state"} <= result.structured_content.keys()
@@ -66,7 +67,10 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
     assert 'content="a1b2c3d4"' in html
     assert "window.openai?.toolOutput" in html
     assert 'window.addEventListener("openai:set_globals"' in html
-    assert "setTimeout(cleanup, 30000)" in html
+    assert "setTimeout(stopRecovery, 30000)" in html
+    assert "event.stopImmediatePropagation()" in html
+    assert "ignored non-Prefab tool-result notification" in html
+    assert 'typeof value.state.job_id === "string"' in html
     assert 'method: "ui/notifications/tool-result"' in html
     assert "params: { structuredContent: output }" in html
     assert "window.openai.widgetState" not in html
