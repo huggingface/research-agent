@@ -66,7 +66,18 @@ const isPrefabOutput = (value) =>
   !Array.isArray(value.state);
 
 let standardResultSeen = false;
-window.addEventListener("message", (event) => {{
+let fallbackSent = false;
+let rendererReady = false;
+let graceElapsed = false;
+
+const cleanup = () => {{
+  window.removeEventListener("message", onToolResult, true);
+  window.removeEventListener("openai:set_globals", onOpenAIUpdate);
+  clearTimeout(graceTimer);
+  clearTimeout(expiryTimer);
+}};
+
+const onToolResult = (event) => {{
   const message = event.data;
   if (
     event.source === window.parent &&
@@ -75,17 +86,23 @@ window.addEventListener("message", (event) => {{
     isPrefabOutput(message.params?.structuredContent)
   ) {{
     standardResultSeen = true;
+    cleanup();
   }}
-}}, {{ capture: true, passive: true }});
+}};
 
-await import({renderer_url});
-
-for (const delay of [1500, 1500]) {{
-  await new Promise((resolve) => setTimeout(resolve, delay));
-  if (standardResultSeen) break;
+const recover = () => {{
+  if (
+    standardResultSeen ||
+    fallbackSent ||
+    !rendererReady ||
+    !graceElapsed
+  ) return;
 
   const output = window.openai?.toolOutput;
-  if (!isPrefabOutput(output)) continue;
+  if (!isPrefabOutput(output)) return;
+
+  fallbackSent = true;
+  cleanup();
 
   // Prefab 0.20.2 consumes host results through this version-pinned transport.
   window.dispatchEvent(new MessageEvent("message", {{
@@ -99,8 +116,29 @@ for (const delay of [1500, 1500]) {{
   console.info(
     "[research-prefab] hydrated from window.openai.toolOutput"
   );
-  break;
-}}
+}};
+
+const onOpenAIUpdate = (event) => {{
+  if (event.detail?.globals?.toolOutput !== undefined) recover();
+}};
+
+window.addEventListener("message", onToolResult, {{
+  capture: true,
+  passive: true,
+}});
+window.addEventListener("openai:set_globals", onOpenAIUpdate, {{
+  passive: true,
+}});
+
+const graceTimer = setTimeout(() => {{
+  graceElapsed = true;
+  recover();
+}}, 3000);
+const expiryTimer = setTimeout(cleanup, 30000);
+
+await import({renderer_url});
+rendererReady = true;
+recover();
 </script>"""
     return _RENDERER_MODULE.sub(script, html, count=1)
 
@@ -123,6 +161,7 @@ class RendererUriTransform(Transform):
         ui = dict(meta.get("ui") or {})
         ui["resourceUri"] = self.resource_uri
         meta["ui"] = ui
+        meta["ui/resourceUri"] = self.resource_uri
         return tool.model_copy(
             update={
                 "meta": meta,
