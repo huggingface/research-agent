@@ -308,7 +308,6 @@ def install_versioned_renderer(
         mime_type=UI_MIME_TYPE,
         app=AppConfig(
             csp=csp,
-            domain=widget_domain,
             prefers_border=True,
         ),
     )

@@ -85,6 +85,6 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
     assert resource.meta["ui"]["csp"]["connectDomains"] == [
         "https://researcher.example"
     ]
-    assert resource.meta["ui"]["domain"] == "https://researcher.example"
+    assert "domain" not in resource.meta["ui"]
     assert resource.meta["ui"]["prefersBorder"] is True
     assert not any(key.startswith("openai/") for key in resource.meta)
