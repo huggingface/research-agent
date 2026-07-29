@@ -9,6 +9,8 @@ from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 
+from .hf_design import HF_LOGO_DATA_URI
+
 LANDING_PAGE_CSP = (
     "default-src 'none'; "
     "base-uri 'none'; "
@@ -90,7 +92,7 @@ def landing_page_html(connection_url: str) -> str:
       box-shadow: 0 18px 48px rgba(15, 23, 42, .09);
     }}
     .brand {{ display: flex; align-items: center; gap: 12px; font-weight: 700; }}
-    .logo {{ font-size: 34px; }}
+    .logo {{ width: 38px; height: 36px; object-fit: contain; }}
     .status {{
       display: inline-block;
       margin-left: auto;
@@ -175,7 +177,12 @@ def landing_page_html(connection_url: str) -> str:
 <body>
   <main>
     <div class="brand">
-      <span class="logo" aria-hidden="true">🤗</span>
+      <img
+        class="logo"
+        src="{HF_LOGO_DATA_URI}"
+        alt=""
+        aria-hidden="true"
+      >
       <span>Hugging Face</span>
       <span class="status">MCP server online</span>
     </div>
