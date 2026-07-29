@@ -51,6 +51,10 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
         uri = tool.meta["ui"]["resourceUri"]
         result = await client.call_tool("researcher", {})
         contents = await client.read_resource(uri)
+        compatible = await client.read_resource(
+            f"ui://prefab/tool/{hash_tool('Hugging Face Researcher', 'researcher')}/"
+            "renderer-7cfb45fbe220.html"
+        )
         resources = await client.list_resources()
 
     tool_digest = hash_tool("Hugging Face Researcher", "researcher")
@@ -63,7 +67,8 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
     assert contents[0].mimeType == "text/html;profile=mcp-app"
     html = contents[0].text
     assert "@prefecthq/prefab-ui@0.20.2" in html
-    assert 'content="a1b2c3d4"' in html
+    assert "research-app-build" not in html
+    assert compatible[0].text == html
     assert "window.openai?.toolOutput" in html
     assert 'window.addEventListener("openai:set_globals"' in html
     assert "setTimeout(stopRecovery, 30000)" in html

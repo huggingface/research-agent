@@ -20,6 +20,12 @@ from prefab_ui.renderer import get_renderer_csp, get_renderer_html
 _RENDERER_MODULE = re.compile(
     r'<script type="module" crossorigin src="([^"]+)"></script>'
 )
+_COMPATIBLE_RENDERER_DIGESTS = (
+    "0e57015a15d4",
+    "3217f2d981ea",
+    "7cfb45fbe220",
+    "aa2fea14c7e0",
+)
 
 PREFAB_OUTPUT_SCHEMA = {
     "type": "object",
@@ -284,10 +290,7 @@ def install_versioned_renderer(
         widget_domain,
     ).replace(
         "</head>",
-        (
-            '<meta name="referrer" content="no-referrer">'
-            f'<meta name="research-app-build" content="{build_id}"></head>'
-        ),
+        '<meta name="referrer" content="no-referrer"></head>',
     )
     digest = hashlib.sha256(html.encode()).hexdigest()[:12]
     tool_digest = hash_tool(app_name, tool_name)
@@ -302,17 +305,29 @@ def install_versioned_renderer(
     csp_data["connect_domains"] = connect_domains
     csp = ResourceCSP(**csp_data)
 
-    @mcp.resource(
-        resource_uri,
-        name="Versioned Prefab Renderer",
-        mime_type=UI_MIME_TYPE,
-        app=AppConfig(
-            csp=csp,
-            prefers_border=True,
-        ),
-    )
-    def prefab_renderer() -> str:
-        return html
+    app_config = AppConfig(csp=csp, prefers_border=True)
+
+    def register_renderer(uri: str, name: str) -> None:
+        @mcp.resource(
+            uri,
+            name=name,
+            mime_type=UI_MIME_TYPE,
+            app=app_config,
+        )
+        def prefab_renderer() -> str:
+            return html
+
+    register_renderer(resource_uri, "Versioned Prefab Renderer")
+    for compatible_digest in _COMPATIBLE_RENDERER_DIGESTS:
+        if compatible_digest == digest:
+            continue
+        register_renderer(
+            (
+                f"ui://prefab/tool/{tool_digest}/"
+                f"renderer-{compatible_digest}.html"
+            ),
+            f"Compatible Prefab Renderer {compatible_digest}",
+        )
 
     mcp.add_transform(RendererUriTransform(tool_name, resource_uri))
     return digest
