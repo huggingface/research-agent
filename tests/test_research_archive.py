@@ -7,6 +7,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from research.archive_provisioning import ARCHIVE_TEMPLATE_VERSION
+
 
 def load_archive_module():
     path = Path(__file__).parents[1] / "deploy" / "research-archive" / "app.py"
@@ -53,6 +55,54 @@ def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
     assert any(file["path"] == "output/assets/chart.svg" for file in detail["files"])
 
 
+def test_archive_renders_same_run_markdown_images(tmp_path: Path) -> None:
+    module = load_archive_module()
+    run_id = "26-07-29-trending-model-survey-ba08"
+    run = tmp_path / run_id
+    image = run / "scratch" / "research" / "chart.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"\x89PNG\r\n\x1a\n")
+    (run / "output").mkdir()
+    (run / "output" / "report.md").write_text(
+        "# Report\n\n"
+        "![Chart](https://huggingface.co/buckets/evalstate/research-agent/"
+        f"resolve/{run_id}/scratch/research/chart.png)"
+    )
+    archive = module.ResearchArchive(
+        tmp_path,
+        bucket_id="evalstate/research-agent",
+    )
+
+    detail = archive.describe(run_id)
+
+    assert (
+        f'<img alt="Chart" src="/files/{run_id}/scratch/research/chart.png">'
+        in detail["markdown_html"]
+    )
+
+
+def test_archive_rejects_untrusted_markdown_images(tmp_path: Path) -> None:
+    module = load_archive_module()
+    run_id = "26-07-29-private-a123"
+    run = tmp_path / run_id
+    (run / "output").mkdir(parents=True)
+    (run / "output" / "report.md").write_text(
+        "# Report\n\n"
+        "![External](https://example.com/chart.png)\n\n"
+        '<img src="/files/other-run/output/chart.png" onerror="alert(1)">'
+    )
+    archive = module.ResearchArchive(
+        tmp_path,
+        bucket_id="evalstate/research-agent",
+    )
+
+    html = archive.describe(run_id)["markdown_html"]
+
+    assert "Image unavailable: External" in html
+    assert "<img" not in html
+    assert "onerror" not in html
+
+
 def test_archive_rejects_paths_outside_a_run(tmp_path: Path) -> None:
     module = load_archive_module()
     archive = module.ResearchArchive(tmp_path)
@@ -64,6 +114,38 @@ def test_archive_rejects_paths_outside_a_run(tmp_path: Path) -> None:
             pass
         else:
             raise AssertionError(f"unsafe path accepted: {value}")
+
+
+def test_archive_rejects_symlinked_runs_and_assets(tmp_path: Path) -> None:
+    module = load_archive_module()
+    outside = tmp_path / "_outside"
+    outside.mkdir()
+    (outside / "secret.png").write_bytes(b"secret")
+    run_id = "26-07-29-symlink-a123"
+    (tmp_path / run_id).symlink_to(outside, target_is_directory=True)
+    archive = module.ResearchArchive(tmp_path)
+
+    assert not archive.list_runs()
+    for operation in (
+        lambda: archive.describe(run_id),
+        lambda: archive.file_path(run_id, "secret.png"),
+    ):
+        try:
+            operation()
+        except FileNotFoundError:
+            pass
+        else:
+            raise AssertionError("symlinked run was accepted")
+
+    safe_run = tmp_path / "26-07-29-safe-b456"
+    (safe_run / "output").mkdir(parents=True)
+    (safe_run / "output" / "linked.png").symlink_to(outside / "secret.png")
+    try:
+        archive.file_path(safe_run.name, "output/linked.png")
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError("symlinked artifact was accepted")
 
 
 def test_archive_deletes_only_a_valid_run(tmp_path: Path) -> None:
@@ -199,4 +281,5 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert "state.details.get(id)" in page.text
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/svg+xml")
-    assert client.get("/health").json()["template_version"] == "1.2.4"
+    assert client.get("/health").json()["template_version"] == "1.2.5"
+    assert module.TEMPLATE_MARKER["template_version"] == ARCHIVE_TEMPLATE_VERSION

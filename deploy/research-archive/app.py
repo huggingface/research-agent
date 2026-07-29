@@ -9,8 +9,11 @@ import re
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from html import escape
+from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import quote, unquote, urlsplit
 
 import bleach
 import markdown
@@ -19,6 +22,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 APP_ROOT = Path(__file__).parent
 DEFAULT_RESEARCH_ROOT = Path(os.getenv("RESEARCH_ROOT", "/research"))
+DEFAULT_BUCKET_ID = os.getenv("RESEARCH_ARCHIVE_BUCKET")
 DEFAULT_READ_ONLY = os.getenv("RESEARCH_ARCHIVE_READ_ONLY", "").lower() in {
     "1",
     "true",
@@ -28,6 +32,8 @@ TEMPLATE_MARKER = json.loads((APP_ROOT / "archive-template.json").read_text())
 SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 DATE_PREFIX = re.compile(r"^(?P<date>\d{2}-\d{2}-\d{2})-(?P<slug>.+?)-[a-f0-9]{4}$")
 HEADING = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
+IMAGE_TAG = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+SAFE_IMAGE_SUFFIXES = {".jpeg", ".jpg", ".png", ".webp"}
 ARTIFACT_CSP = (
     "default-src 'none'; "
     "base-uri 'none'; "
@@ -55,6 +61,7 @@ ALLOWED_TAGS = set(bleach.sanitizer.ALLOWED_TAGS) | {
     "h3",
     "h4",
     "hr",
+    "img",
     "p",
     "pre",
     "span",
@@ -65,7 +72,7 @@ ALLOWED_TAGS = set(bleach.sanitizer.ALLOWED_TAGS) | {
     "thead",
     "tr",
 }
-ALLOWED_ATTRIBUTES = {
+BASE_ALLOWED_ATTRIBUTES = {
     "a": ["href", "title"],
     "code": ["class"],
     "td": ["align"],
@@ -102,8 +109,9 @@ class RunSummary:
 class ResearchArchive:
     """Inspect one mounted research bucket without an external index."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, bucket_id: str | None = None) -> None:
         self.root = root
+        self.bucket_id = bucket_id if bucket_id is not None else DEFAULT_BUCKET_ID
 
     def list_runs(self) -> list[RunSummary]:
         if not self.root.is_dir():
@@ -111,7 +119,11 @@ class ResearchArchive:
         runs = [
             self.summarize(path)
             for path in self.root.iterdir()
-            if path.is_dir() and SAFE_SEGMENT.fullmatch(path.name)
+            if (
+                path.is_dir()
+                and not path.is_symlink()
+                and SAFE_SEGMENT.fullmatch(path.name)
+            )
         ]
         return sorted(runs, key=lambda run: run.updated_at, reverse=True)
 
@@ -143,7 +155,7 @@ class ResearchArchive:
 
     def describe(self, run_id: str) -> dict[str, Any]:
         run = self.run_path(run_id)
-        if not run.is_dir():
+        if run.is_symlink() or not run.is_dir():
             raise FileNotFoundError(run_id)
         summary = self.summarize(run)
         markdown_path = run / "output" / "report.md"
@@ -171,7 +183,11 @@ class ResearchArchive:
         return {
             **summary.json(),
             "markdown": markdown_text,
-            "markdown_html": render_markdown(markdown_text),
+            "markdown_html": render_markdown(
+                markdown_text,
+                run_id=run_id,
+                archive=self,
+            ),
             "research_manifest": research_manifest,
             "presentation_manifests": presentation_manifests,
             "files": files,
@@ -190,13 +206,22 @@ class ResearchArchive:
 
     def file_path(self, run_id: str, relative: str) -> Path:
         run = self.run_path(run_id)
+        if run.is_symlink() or not run.is_dir():
+            raise FileNotFoundError(run_id)
         candidate = PurePosixPath(relative)
         if candidate.is_absolute() or ".." in candidate.parts:
             raise ValueError("Invalid artifact path")
         path = run.joinpath(*candidate.parts)
-        if not path.is_file():
+        resolved_root = self.root.resolve()
+        resolved_run = run.resolve()
+        resolved_path = path.resolve()
+        if (
+            not resolved_run.is_relative_to(resolved_root)
+            or not resolved_path.is_relative_to(resolved_run)
+            or not resolved_path.is_file()
+        ):
             raise FileNotFoundError(relative)
-        return path
+        return resolved_path
 
     def delete(self, run_id: str) -> None:
         run = self.run_path(run_id)
@@ -269,7 +294,12 @@ class ResearchArchive:
         return "file"
 
 
-def render_markdown(source: str) -> str:
+def render_markdown(
+    source: str,
+    *,
+    run_id: str | None = None,
+    archive: ResearchArchive | None = None,
+) -> str:
     if not source:
         return ""
     rendered = markdown.markdown(
@@ -277,13 +307,140 @@ def render_markdown(source: str) -> str:
         extensions=["extra", "sane_lists", "tables"],
         output_format="html",
     )
-    return bleach.clean(
+    if run_id is not None and archive is not None:
+        rendered = _rewrite_rendered_images(rendered, run_id, archive)
+    cleaned = bleach.clean(
         rendered,
         tags=ALLOWED_TAGS,
-        attributes=ALLOWED_ATTRIBUTES,
+        attributes=_allowed_attribute(run_id),
         protocols={"http", "https", "hf", "mailto"},
         strip=True,
     )
+    return re.sub(
+        r"<img(?P<attributes>[^>]*)>",
+        lambda match: (
+            match.group(0) if re.search(r"\bsrc\s*=", match.group("attributes")) else ""
+        ),
+        cleaned,
+    )
+
+
+def _rewrite_rendered_images(
+    rendered: str,
+    run_id: str,
+    archive: ResearchArchive,
+) -> str:
+    def replace(match: re.Match[str]) -> str:
+        attributes = _image_attributes(match.group(0))
+        alt = attributes.get("alt", "").strip() or "Report image"
+        relative = _archive_image_path(
+            attributes.get("src", ""),
+            run_id,
+            archive.bucket_id,
+        )
+        if relative is None:
+            return f"<span>Image unavailable: {escape(alt)}</span>"
+        try:
+            archive.file_path(run_id, relative)
+        except (FileNotFoundError, ValueError):
+            return f"<span>Image unavailable: {escape(alt)}</span>"
+        route = "/files/" + "/".join(
+            quote(part, safe="") for part in (run_id, *PurePosixPath(relative).parts)
+        )
+        title = attributes.get("title")
+        title_attribute = f' title="{escape(title, quote=True)}"' if title else ""
+        return f'<img alt="{escape(alt, quote=True)}" src="{route}"{title_attribute}>'
+
+    return IMAGE_TAG.sub(replace, rendered)
+
+
+class _ImageParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.attributes: dict[str, str] = {}
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        if tag == "img":
+            self.attributes = {
+                name: value or ""
+                for name, value in attrs
+                if name in {"alt", "src", "title"}
+            }
+
+
+def _image_attributes(tag: str) -> dict[str, str]:
+    parser = _ImageParser()
+    parser.feed(tag)
+    return parser.attributes
+
+
+def _archive_image_path(
+    source: str,
+    run_id: str,
+    bucket_id: str | None,
+) -> str | None:
+    if not source or "\\" in source or "\x00" in source:
+        return None
+    try:
+        parsed = urlsplit(source)
+    except ValueError:
+        return None
+    if parsed.query or parsed.fragment:
+        return None
+
+    if parsed.scheme or parsed.netloc:
+        if (
+            parsed.scheme != "https"
+            or parsed.netloc != "huggingface.co"
+            or not bucket_id
+        ):
+            return None
+        prefixes = (
+            f"/buckets/{bucket_id}/resolve/{run_id}/",
+            f"/buckets/{bucket_id}/resolve/main/{run_id}/",
+            f"/buckets/{bucket_id}/tree/{run_id}/",
+        )
+        prefix = next(
+            (candidate for candidate in prefixes if parsed.path.startswith(candidate)),
+            None,
+        )
+        if prefix is None:
+            return None
+        path = parsed.path.removeprefix(prefix)
+    else:
+        path = parsed.path
+        if not path.startswith(("output/", "scratch/")):
+            path = f"output/{path}"
+
+    decoded = unquote(path)
+    if decoded.startswith("/") or decoded != path:
+        return None
+    parts = PurePosixPath(decoded).parts
+    if (
+        not parts
+        or parts[0] not in {"output", "scratch"}
+        or any(part in {"", ".", ".."} for part in parts)
+        or PurePosixPath(decoded).suffix.lower() not in SAFE_IMAGE_SUFFIXES
+    ):
+        return None
+    return PurePosixPath(*parts).as_posix()
+
+
+def _allowed_attribute(run_id: str | None):
+    image_prefix = f"/files/{quote(run_id, safe='')}/" if run_id else None
+
+    def allow(tag: str, name: str, value: str) -> bool:
+        if tag == "img":
+            if name == "src":
+                return image_prefix is not None and value.startswith(image_prefix)
+            return name in {"alt", "title"}
+        return name in BASE_ALLOWED_ATTRIBUTES.get(tag, ())
+
+    return allow
 
 
 def create_app(
