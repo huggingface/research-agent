@@ -13,6 +13,27 @@ from fastmcp.server.transforms import Transform
 from fastmcp.tools.base import Tool
 from prefab_ui.renderer import get_renderer_csp, get_renderer_html
 
+PREFAB_OUTPUT_SCHEMA = {
+    "type": "object",
+    "required": ["$prefab", "view", "state"],
+    "properties": {
+        "$prefab": {
+            "type": "object",
+            "required": ["version"],
+            "properties": {"version": {"type": "string"}},
+            "additionalProperties": True,
+        },
+        "view": {"type": "object"},
+        "state": {"type": "object"},
+        "css": {"type": "array", "items": {"type": "string"}},
+        "stylesheets": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "additionalProperties": True,
+}
+
 
 class RendererUriTransform(Transform):
     """Point one UI tool at a content-addressed renderer resource."""
@@ -32,7 +53,20 @@ class RendererUriTransform(Transform):
         ui = dict(meta.get("ui") or {})
         ui["resourceUri"] = self.resource_uri
         meta["ui"] = ui
-        return tool.model_copy(update={"meta": meta})
+        meta.update(
+            {
+                "openai/outputTemplate": self.resource_uri,
+                "openai/widgetAccessible": True,
+                "openai/toolInvocation/invoking": "Starting research…",
+                "openai/toolInvocation/invoked": "Research started",
+            }
+        )
+        return tool.model_copy(
+            update={
+                "meta": meta,
+                "output_schema": PREFAB_OUTPUT_SCHEMA,
+            }
+        )
 
 
 def install_versioned_renderer(
@@ -56,12 +90,25 @@ def install_versioned_renderer(
     domains.extend(domain for domain in resource_domains if domain not in domains)
     csp_data["resource_domains"] = domains
     csp = ResourceCSP(**csp_data)
+    openai_csp = {
+        "connect_domains": list(csp.connect_domains or ()),
+        "resource_domains": list(csp.resource_domains or ()),
+        "frame_domains": list(csp.frame_domains or ()),
+    }
 
     @mcp.resource(
         resource_uri,
         name="Versioned Prefab Renderer",
         mime_type=UI_MIME_TYPE,
         app=AppConfig(csp=csp),
+        meta={
+            "openai/widgetDescription": (
+                "Live progress and final reports from the Hugging Face "
+                "Research MCP Server."
+            ),
+            "openai/widgetPrefersBorder": True,
+            "openai/widgetCSP": openai_csp,
+        },
     )
     def prefab_renderer() -> str:
         return html
