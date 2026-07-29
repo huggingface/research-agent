@@ -55,14 +55,6 @@ class RendererUriTransform(Transform):
         ui = dict(meta.get("ui") or {})
         ui["resourceUri"] = self.resource_uri
         meta["ui"] = ui
-        meta.update(
-            {
-                "openai/outputTemplate": self.resource_uri,
-                "openai/widgetAccessible": True,
-                "openai/toolInvocation/invoking": "Starting research…",
-                "openai/toolInvocation/invoked": "Research started",
-            }
-        )
         return tool.model_copy(
             update={
                 "meta": meta,
@@ -94,21 +86,6 @@ def install_versioned_renderer(
     csp_data["resource_domains"] = domains
     csp = ResourceCSP(**csp_data)
     widget_domain = widget_domain or _default_widget_domain()
-    openai_csp = {
-        "connect_domains": list(csp.connect_domains or ()),
-        "resource_domains": list(csp.resource_domains or ()),
-        "frame_domains": list(csp.frame_domains or ()),
-    }
-
-    resource_meta = {
-        "openai/widgetDescription": (
-            "Live progress and final reports from the Hugging Face Research MCP Server."
-        ),
-        "openai/widgetPrefersBorder": True,
-        "openai/widgetCSP": openai_csp,
-    }
-    if widget_domain:
-        resource_meta["openai/widgetDomain"] = widget_domain
 
     @mcp.resource(
         resource_uri,
@@ -119,7 +96,6 @@ def install_versioned_renderer(
             domain=widget_domain,
             prefers_border=True,
         ),
-        meta=resource_meta,
     )
     def prefab_renderer() -> str:
         return html

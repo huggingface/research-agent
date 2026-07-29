@@ -46,8 +46,7 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
     tool_digest = hash_tool("Hugging Face Researcher", "researcher")
     assert uri == (f"ui://prefab/tool/{tool_digest}/renderer-{digest}.html")
     assert tool.outputSchema == PREFAB_OUTPUT_SCHEMA
-    assert tool.meta["openai/outputTemplate"] == uri
-    assert tool.meta["openai/widgetAccessible"] is True
+    assert not any(key.startswith("openai/") for key in tool.meta)
     assert result.structured_content is not None
     assert {"$prefab", "view", "state"} <= result.structured_content.keys()
     assert contents[0].mimeType == "text/html;profile=mcp-app"
@@ -59,11 +58,6 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
         "https://fonts.googleapis.com",
         "https://fonts.gstatic.com",
     ]
-    assert resource.meta["openai/widgetCSP"]["resource_domains"] == [
-        "https://cdn.jsdelivr.net",
-        "https://fonts.googleapis.com",
-        "https://fonts.gstatic.com",
-    ]
     assert resource.meta["ui"]["domain"] == "https://researcher.example"
-    assert resource.meta["openai/widgetDomain"] == "https://researcher.example"
     assert resource.meta["ui"]["prefersBorder"] is True
+    assert not any(key.startswith("openai/") for key in resource.meta)
