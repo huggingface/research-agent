@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import logging
 import os
 import posixpath
@@ -12,8 +13,6 @@ import shlex
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
-from huggingface_hub import HfApi
-
 from fast_agent.tools.environment_transfer import copy_tree
 from fast_agent.tools.execution_environment import ShellExecutionRequest
 from fast_agent.tools.huggingface_sandbox_environment import (
@@ -21,18 +20,89 @@ from fast_agent.tools.huggingface_sandbox_environment import (
     HuggingFaceSandboxEnvironment,
 )
 from fast_agent.tools.local_shell_executor import LocalEnvironment
+from huggingface_hub import HfApi
 
+from research.app_artifacts import SAFE_ASSET_MEDIA_TYPES
+from research.app_jobs import ResearchJob, current_research_job
 from research.research_workspace import (
     ResearchWorkspace,
     current_research_workspace,
 )
-from research.app_jobs import ResearchJob, current_research_job
 
 SKILL_ROOT = Path(__file__).parent / "skills" / "birch-html"
 SANDBOX_SKILL_ROOT = "/opt/birch"
 SANDBOX_WORKSPACE_ROOT = "/workspace"
 BIRCH_STYLE_MARKER = "__BIRCH_SYSTEM_CSS__"
 MAX_FINALIZE_ATTEMPTS = 3
+PRESENTATION_MANIFEST_VALIDATOR = r"""
+import json
+import posixpath
+import sys
+from pathlib import Path
+
+attempt_root = Path(sys.argv[1])
+allowed = json.loads(sys.argv[2])
+manifest_path = attempt_root / "manifest.json"
+validation_path = attempt_root / "validation" / "finalization.md"
+validation_path.parent.mkdir(parents=True, exist_ok=True)
+
+errors = []
+try:
+    manifest = json.loads(manifest_path.read_text())
+except Exception as exc:
+    errors.append(f"Could not read presentation manifest: {exc}")
+    manifest = {}
+
+prefix = attempt_root.as_posix().removeprefix("/workspace/") + "/assets/"
+records = manifest.get("artifacts", []) if isinstance(manifest, dict) else []
+if not isinstance(records, list):
+    errors.append("Presentation manifest artifacts must be a list.")
+    records = []
+for record in records:
+    if not isinstance(record, dict):
+        errors.append("Presentation manifest entries must be JSON objects.")
+        continue
+    path = str(record.get("path") or "")
+    candidate = Path(path)
+    normalized = posixpath.normpath(path)
+    if (
+        not path
+        or candidate.is_absolute()
+        or ".." in candidate.parts
+        or normalized.startswith("../")
+    ):
+        errors.append(f"Invalid workspace-relative presentation path: {path!r}.")
+        continue
+    path = normalized
+    if not path.startswith(prefix):
+        continue
+    suffix = Path(path).suffix.lower()
+    expected = allowed.get(suffix)
+    declared = record.get("media_type")
+    if expected is None:
+        errors.append(
+            f"{path} is not a supported presentation asset. "
+            "Do not copy output/report.md into assets/. "
+            f"Permitted extensions: {', '.join(sorted(allowed))}."
+        )
+    elif declared and declared != expected:
+        errors.append(
+            f"{path} declares {declared!r}; expected {expected!r} for {suffix}."
+        )
+
+if errors:
+    validation_path.write_text(
+        "# Presentation finalization validation\n\n"
+        + "\n".join(f"- {error}" for error in errors)
+        + "\n"
+    )
+    raise SystemExit("\n".join(errors))
+
+validation_path.write_text(
+    "# Presentation finalization validation\n\n"
+    "Presentation asset types and media types are valid.\n"
+)
+"""
 
 SANDBOX_AGENT_CARD = """---
 type: agent
@@ -66,6 +136,14 @@ the user prompt. Use the trusted __BIRCH_SYSTEM_CSS__ marker and canonical Birch
 classes; do not recreate the design system in custom CSS. Put file assets in
 the attempt's assets/ directory and reference them as relative assets/... URLs.
 Never reference /tmp, /workspace, file://, or ../scratch from HTML.
+
+/workspace/output/report.md is the canonical Markdown report. Never copy it to
+the attempt assets/ directory and never declare assets/report.md. The finalized
+HTML and Markdown reports are published as siblings, so use href="report.md"
+for a visible link to the canonical Markdown report.
+
+Only declare presentation assets with these extensions:
+.avif, .csv, .gif, .jpeg, .jpg, .json, .png, .svg, .webp.
 
 Write the attempt manifest last, after every artifact is durable. Return only a
 concise completion summary.
@@ -250,7 +328,9 @@ def _metric_card(item: dict[str, str]) -> str:
 def _is_compact_metric(value: str) -> bool:
     """Reserve oversized KPI typography for short numeric values."""
     return len(value) <= 14 and bool(
-        re.fullmatch(r"[~≈<>+\-]?\s*[$€£¥]?\s*[\d.,]+\s*(?:[%×xKMBTkmbt]|ms|s|m|h|d)?", value)
+        re.fullmatch(
+            r"[~≈<>+\-]?\s*[$€£¥]?\s*[\d.,]+\s*(?:[%×xKMBTkmbt]|ms|s|m|h|d)?", value
+        )
     )
 
 
@@ -400,6 +480,11 @@ The presentation manifest must be JSON with this shape:
 Declare every generated asset using its workspace-relative path. Generate
 charts when the persisted evidence supports a useful visualization. Pair
 charts with exact values or accessible explanatory text.
+
+`/workspace/output/report.md` is canonical input, not a presentation asset.
+Do not copy or declare it under assets/. Link the final sibling report with
+href="report.md". Assets are limited to:
+.avif, .csv, .gif, .jpeg, .jpg, .json, .png, .svg, .webp.
 """
     if attempt > 1:
         prompt += f"""
@@ -426,6 +511,10 @@ Correct those findings rather than repeating the same presentation.
         await sandbox.write_text("/opt/html-agent.md", SANDBOX_AGENT_CARD)
         await sandbox.write_text("/opt/html-prompt.md", prompt)
         await sandbox.write_text(
+            "/opt/validate-presentation-manifest.py",
+            PRESENTATION_MANIFEST_VALIDATOR,
+        )
+        await sandbox.write_text(
             "/opt/fast-agent.yaml",
             (Path(__file__).parent / "fast-agent.yaml").read_text(),
         )
@@ -445,12 +534,34 @@ Correct those findings rather than repeating the same presentation.
             command,
             timeout=float(os.getenv("BIRCH_AGENT_TIMEOUT", "900")) + 60,
         )
-        await _validate(
-            sandbox,
-            _sandbox_path(report_path),
-            report_root=_sandbox_path(f"{attempt_root}/validation"),
-            fail_on_warn=True,
-        )
+        try:
+            await _run(
+                sandbox,
+                "python /opt/validate-presentation-manifest.py "
+                f"{shlex.quote(_sandbox_path(attempt_root))} "
+                f"{shlex.quote(json.dumps(SAFE_ASSET_MEDIA_TYPES, sort_keys=True))}",
+                timeout=60,
+            )
+            await _validate(
+                sandbox,
+                _sandbox_path(report_path),
+                report_root=_sandbox_path(f"{attempt_root}/validation"),
+                fail_on_warn=True,
+            )
+        except Exception:
+            for diagnostic in (
+                f"{attempt_root}/validation/finalization.md",
+                f"{attempt_root}/validation/check.md",
+            ):
+                try:
+                    await _wait_for_bucket_file(
+                        workspace,
+                        diagnostic,
+                        timeout=15,
+                    )
+                except Exception:
+                    pass
+            raise
         completed = True
     finally:
         await asyncio.shield(sandbox.close())

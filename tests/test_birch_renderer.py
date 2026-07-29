@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from research.app_jobs import ResearchJob
 from research.birch_renderer import (
     SANDBOX_AGENT_CARD,
     _agent_sandbox_environment,
@@ -16,7 +17,6 @@ from research.birch_renderer import (
     _workspace_path,
     read_birch_skill_file,
 )
-from research.app_jobs import ResearchJob
 from research.research_workspace import ResearchWorkspace
 
 
@@ -94,6 +94,9 @@ def test_presentation_worker_is_stateless_and_uses_the_same_session_mount() -> N
     assert "use_history: false" in SANDBOX_AGENT_CARD
     assert "/workspace/scratch/research/manifest.json" in SANDBOX_AGENT_CARD
     assert "You may generate charts" in SANDBOX_AGENT_CARD
+    assert "Never copy it to" in SANDBOX_AGENT_CARD
+    assert 'href="report.md"' in SANDBOX_AGENT_CARD
+    assert ".avif, .csv, .gif" in SANDBOX_AGENT_CARD
 
 
 @pytest.mark.asyncio

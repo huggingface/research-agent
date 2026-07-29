@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
-
 from fast_agent import AgentAuth
+
 from research.app_artifacts import MARKER, finalize_bucket_html, read_bucket_markdown
 from research.app_jobs import ResearchJob
 
@@ -64,8 +65,16 @@ class MarkdownBucketSimulator:
 
 
 class PresentationBucketSimulator:
-    def __init__(self, draft: str) -> None:
+    def __init__(
+        self,
+        draft: str,
+        *,
+        asset_path: str | None = "assets/chart.png",
+        media_type: str = "image/png",
+    ) -> None:
         self.draft = draft
+        self.asset_path = asset_path
+        self.media_type = media_type
         self.uploads: list[tuple[bytes, str]] = []
 
     def whoami(self, *, token: str) -> dict[str, str]:
@@ -84,24 +93,30 @@ class PresentationBucketSimulator:
         if remote.endswith("/report.html"):
             local.write_text(self.draft)
         elif remote.endswith("/manifest.json"):
+            artifacts = [
+                {
+                    "path": "scratch/presentation/attempts/1/report.html",
+                    "media_type": "text/html",
+                }
+            ]
+            if self.asset_path:
+                artifacts.append(
+                    {
+                        "path": (f"scratch/presentation/attempts/1/{self.asset_path}"),
+                        "media_type": self.media_type,
+                    }
+                )
             local.write_text(
-                """{
-  "schema_version": 1,
-  "stage": "presentation",
-  "attempt": 1,
-  "status": "complete",
-  "entrypoint": "scratch/presentation/attempts/1/report.html",
-  "artifacts": [
-    {
-      "path": "scratch/presentation/attempts/1/report.html",
-      "media_type": "text/html"
-    },
-    {
-      "path": "scratch/presentation/attempts/1/assets/chart.png",
-      "media_type": "image/png"
-    }
-  ]
-}"""
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "stage": "presentation",
+                        "attempt": 1,
+                        "status": "complete",
+                        "entrypoint": ("scratch/presentation/attempts/1/report.html"),
+                        "artifacts": artifacts,
+                    }
+                )
             )
         elif remote.endswith("/assets/chart.png"):
             local.write_bytes(b"\x89PNG\r\n\x1a\nchart")
@@ -199,6 +214,76 @@ def test_finalizer_promotes_declared_presentation_assets(tmp_path: Path) -> None
     finalized = api.uploads[0][0].decode()
     assert 'src="data:image/png;base64,' in finalized
     assert 'src="assets/chart.png"' not in finalized
+
+
+def test_finalizer_rejects_markdown_as_presentation_asset(tmp_path: Path) -> None:
+    css_path = tmp_path / "skills" / "birch-html" / "assets" / "birch-system.css"
+    css_path.parent.mkdir(parents=True)
+    css_path.write_text(":root {}")
+    draft = f"""<!doctype html>
+<html><head><style data-birch-system>{MARKER}</style></head>
+<body><main class="page"><a href="assets/report.md">Report</a></main></body>
+</html>"""
+    api = PresentationBucketSimulator(draft, asset_path="assets/report.md")
+    job = ResearchJob(id="research-123", topic="topic", owner_id="alice")
+    job.birch_finalize_attempts = 1
+
+    with pytest.raises(
+        ValueError,
+        match=r'output/report\.md is already published.*href="report\.md"',
+    ):
+        finalize_bucket_html(
+            job,
+            AgentAuth.bearer("token", subject="alice"),
+            tmp_path,
+            api=api,  # type: ignore[arg-type]
+            required=True,
+        )
+
+    assert not api.uploads
+
+
+def test_finalizer_rejects_mismatched_asset_media_type(tmp_path: Path) -> None:
+    css_path = tmp_path / "skills" / "birch-html" / "assets" / "birch-system.css"
+    css_path.parent.mkdir(parents=True)
+    css_path.write_text(":root {}")
+    draft = f"""<!doctype html>
+<html><head><style data-birch-system>{MARKER}</style></head>
+<body><main class="page"><img src="assets/chart.png"></main></body></html>"""
+    api = PresentationBucketSimulator(draft, media_type="text/plain")
+    job = ResearchJob(id="research-123", topic="topic", owner_id="alice")
+    job.birch_finalize_attempts = 1
+
+    with pytest.raises(ValueError, match="declares media type"):
+        finalize_bucket_html(
+            job,
+            AgentAuth.bearer("token", subject="alice"),
+            tmp_path,
+            api=api,  # type: ignore[arg-type]
+            required=True,
+        )
+
+
+def test_finalizer_preserves_canonical_sibling_markdown_link(tmp_path: Path) -> None:
+    css_path = tmp_path / "skills" / "birch-html" / "assets" / "birch-system.css"
+    css_path.parent.mkdir(parents=True)
+    css_path.write_text(":root {}")
+    draft = f"""<!doctype html>
+<html><head><style data-birch-system>{MARKER}</style></head>
+<body><main class="page"><a href="report.md">Markdown</a></main></body></html>"""
+    api = PresentationBucketSimulator(draft, asset_path=None)
+    job = ResearchJob(id="research-123", topic="topic", owner_id="alice")
+    job.birch_finalize_attempts = 1
+
+    finalize_bucket_html(
+        job,
+        AgentAuth.bearer("token", subject="alice"),
+        tmp_path,
+        api=api,  # type: ignore[arg-type]
+        required=True,
+    )
+
+    assert 'href="report.md"' in api.uploads[0][0].decode()
 
 
 def test_markdown_reader_uses_callers_token() -> None:

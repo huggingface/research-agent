@@ -10,13 +10,12 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from fast_agent import AgentAuth
 from huggingface_hub import HfApi
 from huggingface_hub.errors import RemoteEntryNotFoundError
 
-from fast_agent import AgentAuth
-
-from .artifact_contract import validate_stage_manifest
 from .app_jobs import ResearchJob
+from .artifact_contract import validate_stage_manifest
 
 MARKER = "__BIRCH_SYSTEM_CSS__"
 STYLE_RE = re.compile(
@@ -99,9 +98,7 @@ def finalize_bucket_html(
         )
         if source_path is None:
             if required:
-                raise FileNotFoundError(
-                    f"Birch draft was not staged at {attempt_path}"
-                )
+                raise FileNotFoundError(f"Birch draft was not staged at {attempt_path}")
             return None
 
         html = local.read_text()
@@ -175,6 +172,11 @@ def _load_presentation_assets(
 
     asset_prefix = f"{attempt_root}/assets/"
     asset_paths = tuple(path for path in paths if path.startswith(asset_prefix))
+    records = {
+        str(record.get("path")): record
+        for record in manifest.get("artifacts", [])
+        if isinstance(record, dict)
+    }
     declared_refs = {
         posixpath.relpath(path, attempt_root): path for path in asset_paths
     }
@@ -193,7 +195,19 @@ def _load_presentation_assets(
         suffix = _path_suffix(path)
         media_type = SAFE_ASSET_MEDIA_TYPES.get(suffix)
         if media_type is None:
-            raise ValueError(f"Unsupported presentation asset type: {path}")
+            allowed = ", ".join(sorted(SAFE_ASSET_MEDIA_TYPES))
+            raise ValueError(
+                f"Unsupported presentation asset: {path} ({suffix or 'no suffix'}). "
+                "output/report.md is already published next to output/report.html; "
+                'link it as href="report.md" and do not copy it into assets/. '
+                f"Permitted extensions: {allowed}."
+            )
+        declared_media_type = records.get(path, {}).get("media_type")
+        if declared_media_type != media_type:
+            raise ValueError(
+                f"Presentation asset {path} declares media type "
+                f"{declared_media_type!r}; expected {media_type!r}"
+            )
         local = local_root / f"asset-{index}{suffix}"
         api.download_bucket_files(
             bucket_id,
@@ -224,9 +238,8 @@ def _relative_asset_references(html: str) -> set[str]:
     references: set[str] = set()
     for match in ASSET_REF_RE.finditer(html):
         value = match.group("value").strip()
-        if (
-            not value
-            or value.startswith(("/", "http://", "https://", "hf://", "data:"))
+        if not value or value.startswith(
+            ("/", "http://", "https://", "hf://", "data:")
         ):
             continue
         normalized = posixpath.normpath(value)
