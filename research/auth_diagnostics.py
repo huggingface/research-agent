@@ -7,11 +7,14 @@ import hmac
 import secrets
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 from fast_agent import AgentAuth
 from fastmcp import FastMCP
+from huggingface_hub import HfApi
+from huggingface_hub.errors import HfHubHTTPError
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 _FINGERPRINT_KEY = secrets.token_bytes(32)
@@ -77,7 +80,10 @@ def register_oauth_diagnostics(mcp: FastMCP, get_auth: Any) -> None:
         ),
     )
     def oauth_diagnostics() -> dict[str, Any]:
-        return diagnostic_snapshot(get_auth())
+        auth = get_auth()
+        snapshot = diagnostic_snapshot(auth)
+        snapshot["whoamiAuthorization"] = _whoami_authorization(auth)
+        return snapshot
 
 
 def diagnostic_snapshot(auth: AgentAuth | None) -> dict[str, Any]:
@@ -160,3 +166,38 @@ def _package_version(package: str) -> str | None:
         return version(package)
     except PackageNotFoundError:
         return None
+
+
+def _whoami_authorization(auth: AgentAuth | None) -> dict[str, Any] | None:
+    if auth is None or not auth.token:
+        return None
+    try:
+        whoami = HfApi().whoami(token=auth.token)
+    except (HfHubHTTPError, OSError):
+        return {"available": False}
+    authorization = whoami.get("auth")
+    if not isinstance(authorization, dict):
+        return {"available": False}
+    access_token = authorization.get("accessToken")
+    if not isinstance(access_token, dict):
+        access_token = {}
+    fine_grained = access_token.get("fineGrained")
+    if not isinstance(fine_grained, dict):
+        fine_grained = {}
+    return {
+        "available": True,
+        "type": authorization.get("type"),
+        "expiresInMinutes": _expires_in_minutes(authorization.get("expiresAt")),
+        "accessTokenRole": access_token.get("role"),
+        "fineGrainedCategories": sorted(fine_grained),
+    }
+
+
+def _expires_in_minutes(value: Any) -> int | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        expires_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return max(0, int((expires_at - datetime.now(UTC)).total_seconds() // 60))
