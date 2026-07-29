@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import os
 
 from fastmcp import FastMCP
 from starlette.requests import Request
@@ -23,7 +24,7 @@ def register_landing_page(mcp: FastMCP) -> None:
 
     @mcp.custom_route("/", methods=["GET"], include_in_schema=False)
     async def landing_page(request: Request) -> HTMLResponse:
-        connection_url = f"{str(request.base_url).rstrip('/')}/mcp"
+        connection_url = _connection_url(request)
         return HTMLResponse(
             landing_page_html(connection_url),
             headers={
@@ -33,6 +34,23 @@ def register_landing_page(mcp: FastMCP) -> None:
                 "X-Content-Type-Options": "nosniff",
             },
         )
+
+
+def _connection_url(
+    request: Request,
+    space_host: str | None = None,
+) -> str:
+    space_host = (
+        (space_host if space_host is not None else os.getenv("SPACE_HOST", ""))
+        .strip()
+        .strip("/")
+    )
+    if space_host:
+        base = space_host if "://" in space_host else f"https://{space_host}"
+        return f"{base}/mcp"
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.url.netloc)
+    return f"{scheme.split(',', 1)[0].strip()}://{host.split(',', 1)[0].strip()}/mcp"
 
 
 def landing_page_html(connection_url: str) -> str:

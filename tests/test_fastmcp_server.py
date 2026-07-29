@@ -6,6 +6,7 @@ import httpx
 import pytest
 from fast_agent import AgentAuth
 from fastmcp import Client, FastMCP, FastMCPApp
+from starlette.requests import Request
 
 from research.app_auth import effective_agent_auth
 from research.app_jobs import ResearchJobStore
@@ -18,7 +19,11 @@ from research.fastmcp_server import (
     use_stateless_http,
 )
 from research.hf_design import HF_RESOURCE_DOMAINS
-from research.landing_page import LANDING_PAGE_CSP, register_landing_page
+from research.landing_page import (
+    LANDING_PAGE_CSP,
+    _connection_url,
+    register_landing_page,
+)
 
 
 class RunnerSimulator:
@@ -70,6 +75,22 @@ async def test_public_landing_page_shows_request_specific_mcp_url() -> None:
     assert "https://researcher.example/mcp" in landing.text
     assert landing.headers["content-security-policy"] == LANDING_PAGE_CSP
     assert any(getattr(route, "path", None) == "/mcp" for route in app.routes)
+
+
+def test_landing_page_prefers_public_hugging_face_space_host() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "scheme": "http",
+            "server": ("internal", 80),
+            "path": "/",
+            "headers": [],
+        }
+    )
+
+    assert _connection_url(request, "evalstate-researcher.hf.space") == (
+        "https://evalstate-researcher.hf.space/mcp"
+    )
 
 
 @pytest.mark.asyncio
