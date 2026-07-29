@@ -63,7 +63,7 @@ async def build_report_preview(
 
         alt = _unescape_alt(match.group("alt")).strip() or "Report image"
         source = (match.group("angle") or match.group("plain") or "").strip()
-        path = _safe_image_path(source)
+        path = _safe_image_path(source, workspace)
         embedded: tuple[str, str] | None = None
 
         if path and image_count < MAX_REPORT_IMAGES:
@@ -164,22 +164,52 @@ def _is_protected(offset: int, ranges: list[tuple[int, int]]) -> bool:
     return any(start <= offset < end for start, end in ranges)
 
 
-def _safe_image_path(source: str) -> str | None:
+def _safe_image_path(
+    source: str,
+    workspace: ResearchWorkspace,
+) -> str | None:
     if not source or "\\" in source or "\x00" in source:
         return None
-    parsed = urlsplit(source)
-    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+    try:
+        parsed = urlsplit(source)
+    except ValueError:
         return None
-    decoded = unquote(parsed.path)
-    if decoded.startswith("/") or decoded != parsed.path:
+    if parsed.query or parsed.fragment:
         return None
-    normalized = posixpath.normpath(decoded)
-    if normalized in {"", "."} or normalized == ".." or normalized.startswith("../"):
+
+    if parsed.scheme or parsed.netloc:
+        if parsed.scheme != "https" or parsed.netloc != "huggingface.co":
+            return None
+        prefixes = (
+            f"/buckets/{workspace.bucket_id}/resolve/{workspace.session_id}/",
+            f"/buckets/{workspace.bucket_id}/tree/{workspace.session_id}/",
+        )
+        prefix = next(
+            (candidate for candidate in prefixes if parsed.path.startswith(candidate)),
+            None,
+        )
+        if prefix is None:
+            return None
+        path = _safe_workspace_path(parsed.path.removeprefix(prefix))
+        if path is None or path.split("/", 1)[0] not in {"output", "scratch"}:
+            return None
+        return path
+
+    path = _safe_workspace_path(parsed.path)
+    return f"output/{path}" if path is not None else None
+
+
+def _safe_workspace_path(path: str) -> str | None:
+    decoded = unquote(path)
+    if decoded.startswith("/") or decoded != path:
         return None
-    path = PurePosixPath(normalized)
-    if path.suffix.lower() not in _MEDIA_TYPES:
+    parts = PurePosixPath(decoded).parts
+    if not parts or any(part in {"", ".", ".."} for part in parts):
         return None
-    return path.as_posix()
+    normalized = posixpath.join(*parts)
+    if PurePosixPath(normalized).suffix.lower() not in _MEDIA_TYPES:
+        return None
+    return normalized
 
 
 def _media_type(path: str, payload: bytes) -> str | None:
@@ -214,7 +244,7 @@ def _media_type(path: str, payload: bytes) -> str | None:
 async def _read_image(workspace: ResearchWorkspace, path: str) -> bytes:
     def read() -> bytes:
         filesystem = HfFileSystem(token=workspace.bearer_token)
-        with filesystem.open(f"{workspace.output}{path}", "rb") as image:
+        with filesystem.open(f"{workspace.root}{path}", "rb") as image:
             return bytes(image.read(MAX_REPORT_IMAGE_BYTES + 1))
 
     return await asyncio.to_thread(read)

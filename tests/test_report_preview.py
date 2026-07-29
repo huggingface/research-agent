@@ -23,6 +23,10 @@ def image_bytes(format_: str, *, size: tuple[int, int] = (2, 2)) -> bytes:
 
 PNG = image_bytes("PNG")
 JPEG = image_bytes("JPEG")
+HF_BUCKET_PATH = "huggingface.co/buckets/alice/research-agent"
+HF_BUCKET_PORT_PATH = "huggingface.co:443/buckets/alice/research-agent"
+OTHER_BUCKET_PATH = "huggingface.co/buckets/bob/research-agent"
+WORKSPACE_RESOLVE_URL = f"https://{HF_BUCKET_PATH}/resolve/research-abc/"
 
 
 def workspace() -> ResearchWorkspace:
@@ -46,7 +50,7 @@ async def test_report_images_are_embedded_in_document_order() -> None:
     async def read(current: ResearchWorkspace, path: str) -> bytes:
         assert current.bearer_token == "token"
         reads.append(path)
-        return {"chart.png": PNG, "assets/detail.jpg": JPEG}[path]
+        return {"output/chart.png": PNG, "output/assets/detail.jpg": JPEG}[path]
 
     blocks = await build_report_preview(
         (
@@ -65,7 +69,7 @@ async def test_report_images_are_embedded_in_document_order() -> None:
         "image",
         "markdown",
     ]
-    assert reads == ["chart.png", "assets/detail.jpg"]
+    assert reads == ["output/chart.png", "output/assets/detail.jpg"]
     assert blocks[1] == {
         "kind": "image",
         "src": f"data:image/png;base64,{base64.b64encode(PNG).decode()}",
@@ -96,7 +100,7 @@ async def test_unsafe_missing_and_unsupported_images_never_reach_markdown() -> N
         block.get("content", "") for block in blocks if block["kind"] == "markdown"
     )
 
-    assert reads == ["missing.png"]
+    assert reads == ["output/missing.png"]
     assert not any(block["kind"] == "image" for block in blocks)
     assert "Image unavailable: Missing" in content
     assert "Image unavailable: Traversal" in content
@@ -133,7 +137,7 @@ async def test_repeated_images_respect_serialized_payload_limit() -> None:
 
     async def read(_: ResearchWorkspace, path: str) -> bytes:
         nonlocal reads
-        assert path == "chart.png"
+        assert path == "output/chart.png"
         reads += 1
         return payload
 
@@ -170,4 +174,79 @@ async def test_corrupt_image_is_replaced_with_fallback() -> None:
 def test_markdown_only_preview_suppresses_image_elements() -> None:
     assert markdown_only_preview("![Chart](chart.png)") == [
         {"kind": "markdown", "content": r"\![Chart](chart.png)"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_same_workspace_bucket_url_is_embedded() -> None:
+    reads: list[str] = []
+
+    async def read(_: ResearchWorkspace, path: str) -> bytes:
+        reads.append(path)
+        return PNG
+
+    blocks = await build_report_preview(
+        (
+            "![Chart](https://huggingface.co/buckets/alice/research-agent/"
+            "resolve/research-abc/scratch/research/chart.png)"
+        ),
+        workspace(),
+        reader=read,
+    )
+
+    assert reads == ["scratch/research/chart.png"]
+    assert blocks[0]["kind"] == "image"
+    assert blocks[0]["src"].startswith("data:image/png;base64,")
+
+
+@pytest.mark.asyncio
+async def test_same_workspace_tree_url_is_embedded() -> None:
+    reads: list[str] = []
+
+    async def read(_: ResearchWorkspace, path: str) -> bytes:
+        reads.append(path)
+        return PNG
+
+    blocks = await build_report_preview(
+        (
+            "![Chart](https://huggingface.co/buckets/alice/research-agent/"
+            "tree/research-abc/output/assets/chart.png)"
+        ),
+        workspace(),
+        reader=read,
+    )
+
+    assert reads == ["output/assets/chart.png"]
+    assert blocks[0]["kind"] == "image"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source",
+    (
+        f"http://{HF_BUCKET_PATH}/resolve/research-abc/scratch/chart.png",
+        f"https://www.{HF_BUCKET_PATH}/resolve/research-abc/scratch/chart.png",
+        f"https://{HF_BUCKET_PORT_PATH}/resolve/research-abc/scratch/chart.png",
+        f"https://{OTHER_BUCKET_PATH}/resolve/research-abc/scratch/chart.png",
+        f"https://{HF_BUCKET_PATH}/resolve/other-session/scratch/chart.png",
+        f"{WORKSPACE_RESOLVE_URL}../other-session/chart.png",
+        f"{WORKSPACE_RESOLVE_URL}%2e%2e%2fother-session%2fchart.png",
+        f"{WORKSPACE_RESOLVE_URL}private/chart.png",
+        f"{WORKSPACE_RESOLVE_URL}scratch/chart.png?download=true",
+        f"{WORKSPACE_RESOLVE_URL}scratch/chart.png#part",
+        f"{WORKSPACE_RESOLVE_URL}scratch/chart.svg",
+    ),
+)
+async def test_other_bucket_urls_are_rejected(source: str) -> None:
+    async def fail(_: ResearchWorkspace, path: str) -> bytes:
+        raise AssertionError(f"unexpected read: {path}")
+
+    blocks = await build_report_preview(
+        f"![Chart]({source})",
+        workspace(),
+        reader=fail,
+    )
+
+    assert blocks == [
+        {"kind": "markdown", "content": "\n\n> _Image unavailable: Chart_\n\n"}
     ]
