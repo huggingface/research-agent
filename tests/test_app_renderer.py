@@ -56,8 +56,7 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
     tool_digest = hash_tool("Hugging Face Researcher", "researcher")
     assert uri == (f"ui://prefab/tool/{tool_digest}/renderer-{digest}.html")
     assert tool.outputSchema == PREFAB_OUTPUT_SCHEMA
-    assert tool.meta["openai/widgetAccessible"] is True
-    assert "openai/outputTemplate" not in tool.meta
+    assert not any(key.startswith("openai/") for key in tool.meta)
     assert tool.meta["ui/resourceUri"] == uri
     assert result.structured_content is not None
     assert {"$prefab", "view", "state"} <= result.structured_content.keys()
@@ -71,15 +70,20 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
     assert "event.stopImmediatePropagation()" in html
     assert "ignored non-Prefab tool-result notification" in html
     assert 'typeof value.state.job_id === "string"' in html
+    assert "window.openai?.widgetState" in html
+    assert "window.openai?.setWidgetState" in html
+    assert "hydrated from direct status endpoint" in html
     assert 'method: "ui/notifications/tool-result"' in html
     assert "params: { structuredContent: output }" in html
-    assert "window.openai.widgetState" not in html
     assert "localStorage" not in html
     resource = next(resource for resource in resources if str(resource.uri) == uri)
     assert resource.meta["ui"]["csp"]["resourceDomains"] == [
         "https://cdn.jsdelivr.net",
         "https://fonts.googleapis.com",
         "https://fonts.gstatic.com",
+    ]
+    assert resource.meta["ui"]["csp"]["connectDomains"] == [
+        "https://researcher.example"
     ]
     assert resource.meta["ui"]["domain"] == "https://researcher.example"
     assert resource.meta["ui"]["prefersBorder"] is True

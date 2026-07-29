@@ -5,7 +5,14 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from prefab_ui.actions import CloseOverlay, OpenLink, SetInterval, SetState, ShowToast
+from prefab_ui.actions import (
+    CloseOverlay,
+    Fetch,
+    OpenLink,
+    SetInterval,
+    SetState,
+    ShowToast,
+)
 from prefab_ui.actions.mcp import CallTool, SendMessage, UpdateContext
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
@@ -567,6 +574,8 @@ def build_research_ui(
     build_id: str = "dev",
     live: bool = True,
     design: HFDesign | None = None,
+    status_url: str | None = None,
+    recovery_url: str | None = None,
 ) -> PrefabApp:
     snapshot = _ui_snapshot(snapshot)
     if design is not None:
@@ -574,20 +583,55 @@ def build_research_ui(
     on_mount = None
     if live:
         report_is_current = RESULT.markdown_report_revision == STATE.report_revision
-        on_mount = SetInterval(
-            duration=1500,
-            while_=~STATE.job.done,
-            on_tick=CallTool(
-                "research_status",
-                arguments={"job_id": STATE.job_id},
+        poll_status = CallTool(
+            "research_status",
+            arguments={"job_id": STATE.job_id},
+            on_success=[
+                SetState(
+                    "report_loaded",
+                    report_is_current.then(STATE.report_loaded, False),
+                ),
+                SetState("job", RESULT),
+            ],
+        )
+        poll_while = ~STATE.job.done
+        if status_url is not None:
+            poll_status = Fetch(
+                STATE.status_url,
                 on_success=[
                     SetState(
                         "report_loaded",
                         report_is_current.then(STATE.report_loaded, False),
                     ),
                     SetState("job", RESULT),
+                    SetState("report_blocks", RESULT.report_blocks),
+                    SetState("report_loaded", RESULT.report_ready),
+                    SetState(
+                        "report_revision",
+                        RESULT.markdown_report_revision,
+                    ),
                 ],
-            ),
+                on_error=[
+                    SetState("status_unavailable", True),
+                    ShowToast(
+                        "Live status is unavailable",
+                        description=(
+                            "The research may still be running. "
+                            "Reconnect the app to restore updates."
+                        ),
+                        variant="warning",
+                    ),
+                ],
+            )
+            poll_while = (
+                (STATE.status_url != "")
+                & ~STATE.job.done
+                & ~STATE.status_unavailable
+            )
+        on_mount = SetInterval(
+            duration=4000,
+            while_=poll_while,
+            on_tick=poll_status,
         )
 
     cancel_action = CloseOverlay()
@@ -710,6 +754,9 @@ def build_research_ui(
             "event_log_expanded": False,
             "chat_sent": False,
             "app_version": f"build {build_id}",
+            "status_url": status_url or "",
+            "recovery_url": recovery_url or "",
+            "status_unavailable": False,
         },
     ) as ui:
         with Div(css_class="dispatch-sheet", on_mount=on_mount):

@@ -10,6 +10,8 @@ from typing import Annotated, Any
 from fast_agent import FastAgent
 from fastmcp import Context as MCPContext
 from fastmcp import FastMCP, FastMCPApp
+from fastmcp.apps.app import _make_resolver
+from fastmcp.tools import ToolResult
 from prefab_ui.app import PrefabApp
 from pydantic import Field
 
@@ -21,11 +23,17 @@ from .app_jobs import (
     owner_id,
     unavailable_snapshot,
 )
-from .app_renderer import app_build_id, install_versioned_renderer
+from .app_renderer import (
+    app_build_id,
+    default_widget_domain,
+    install_versioned_renderer,
+)
 from .app_ui import build_research_ui
 from .hf_design import HF_RESOURCE_DOMAINS, HFDesign
 from .landing_page import register_landing_page
 from .research_runner import ResearchRunner
+from .status_capability import StatusCapabilityStore
+from .widget_status import APP_NAME, capability_urls, register_widget_status_route
 
 RESEARCH_HOME = Path(__file__).parent
 AGENT_CARDS = RESEARCH_HOME / "agent-cards"
@@ -74,6 +82,8 @@ def register_research_app(
     jobs: ResearchJobStore,
     runner: ResearchRunner,
     build_id: str,
+    status_capabilities: StatusCapabilityStore | None = None,
+    status_origin: str | None = None,
 ) -> None:
     """Register one UI entry point and its app-only backend tools."""
     tasks = ResearchTaskRegistry()
@@ -101,7 +111,7 @@ def register_research_app(
             ),
         ],
         ctx: MCPContext,
-    ) -> PrefabApp:
+    ) -> ToolResult:
         auth = request_auth()
         owner = owner_id(auth, ctx.session_id)
         job = await jobs.create(topic, owner)
@@ -114,11 +124,29 @@ def register_research_app(
         result = await jobs.begin(job.id, owner)
         if result is not None and result.started:
             tasks.start(job.id, runner.run(job, auth))
-        return build_research_ui(
+        direct_status = status_capabilities is not None and status_origin is not None
+        ui = build_research_ui(
             topic,
             job.snapshot(),
             build_id=build_id,
             design=PRODUCTION_UI_DESIGN,
+            status_url="" if direct_status else None,
+            recovery_url="" if direct_status else None,
+        )
+        meta = None
+        if direct_status:
+            token = status_capabilities.issue(job.id, owner)
+            status_url, recovery_url = capability_urls(status_origin, token)
+            meta = {
+                "research": {
+                    "statusUrl": status_url,
+                    "recoveryUrl": recovery_url,
+                }
+            }
+        return ToolResult(
+            content="Research started. Open the interactive app for live progress.",
+            structured_content=ui.to_json(tool_resolver=_make_resolver(APP_NAME)),
+            meta=meta,
         )
 
     configure_research_ui_csp(app)
@@ -208,12 +236,19 @@ async def main() -> None:
     async with fast.harness() as harness:
         enforce_production_isolation(fast)
         build_id = app_build_id(RESEARCH_HOME)
+        jobs = ResearchJobStore()
+        capabilities = StatusCapabilityStore()
+        origin = default_widget_domain()
+        if origin is None:
+            raise RuntimeError("A public widget domain is required")
         app = FastMCPApp("Hugging Face Researcher")
         register_research_app(
             app,
-            jobs=ResearchJobStore(),
+            jobs=jobs,
             runner=ResearchRunner(harness, RESEARCH_HOME),
             build_id=build_id,
+            status_capabilities=capabilities,
+            status_origin=origin,
         )
 
         mcp = FastMCP(
@@ -222,12 +257,21 @@ async def main() -> None:
             instructions="Call `research` to open the live research app.",
         )
         mcp.add_provider(app)
+        register_widget_status_route(
+            mcp,
+            jobs=jobs,
+            capabilities=capabilities,
+            build_id=build_id,
+            origin=origin,
+            design=PRODUCTION_UI_DESIGN,
+        )
         install_versioned_renderer(
             mcp,
             app_name="Hugging Face Researcher",
             tool_name="researcher",
             build_id=build_id,
             resource_domains=HF_RESOURCE_DOMAINS,
+            widget_domain=origin,
         )
         register_landing_page(mcp)
         await mcp.run_http_async(

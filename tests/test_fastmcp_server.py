@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -24,6 +25,8 @@ from research.landing_page import (
     _connection_url,
     register_landing_page,
 )
+from research.status_capability import StatusCapabilityStore
+from research.widget_status import register_widget_status_route
 
 
 class RunnerSimulator:
@@ -137,6 +140,79 @@ async def test_researcher_starts_work_before_returning_ui() -> None:
     assert runner.job is not None
     assert runner.job.status == "running"
     assert runner.job.phase == "researching"
+
+
+@pytest.mark.asyncio
+async def test_researcher_uses_client_only_direct_status_capability() -> None:
+    mcp = FastMCP("test")
+    app = FastMCPApp("Hugging Face Researcher")
+    jobs = ResearchJobStore()
+    capabilities = StatusCapabilityStore()
+    register_research_app(
+        app,
+        jobs=jobs,
+        runner=RunnerSimulator(),  # type: ignore[arg-type]
+        build_id="build",
+        status_capabilities=capabilities,
+        status_origin="https://researcher.example",
+    )
+    mcp.add_provider(app)
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("researcher", {"topic": "Test direct status"})
+
+    assert result.meta is not None
+    assert result.meta["research"]["statusUrl"].startswith(
+        "https://researcher.example/widget/research/"
+    )
+    assert "view=1" in result.meta["research"]["recoveryUrl"]
+    assert result.structured_content is not None
+    assert result.structured_content["state"]["status_url"] == ""
+    assert "widget/research" not in str(result.structured_content)
+    assert '"action": "fetch"' in json.dumps(result.structured_content["view"])
+
+
+@pytest.mark.asyncio
+async def test_direct_status_route_authorizes_snapshot_and_recovery_view() -> None:
+    mcp = FastMCP("test")
+    jobs = ResearchJobStore()
+    capabilities = StatusCapabilityStore()
+    job = await jobs.create("Test direct status", "owner")
+    job.markdown_report_blocks = [{"type": "markdown", "text": "# Findings"}]
+    job.markdown_report_revision = 1
+    token = capabilities.issue(job.id, job.owner_id)
+    register_widget_status_route(
+        mcp,
+        jobs=jobs,
+        capabilities=capabilities,
+        build_id="build",
+        origin="https://researcher.example",
+        design=PRODUCTION_UI_DESIGN,
+    )
+    app = mcp.http_app(path="/mcp", transport="http", stateless_http=True)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="https://researcher.example",
+    ) as client:
+        status = await client.get(f"/widget/research/{token}")
+        recovery = await client.get(f"/widget/research/{token}?view=1")
+        invalid = await client.get(f"/widget/research/{token}x")
+        options = await client.options(f"/widget/research/{token}")
+
+    assert status.status_code == 200
+    assert status.json()["job_id"] == job.id
+    assert status.json()["report_ready"] is True
+    assert status.json()["report_blocks"] == job.markdown_report_blocks
+    assert "owner_id" not in status.text
+    assert status.headers["cache-control"] == "no-store"
+    assert status.headers["access-control-allow-origin"] == "*"
+    assert {"$prefab", "view", "state"} <= recovery.json().keys()
+    assert recovery.json()["state"]["status_url"].endswith(token)
+    assert recovery.json()["state"]["report_blocks"] == job.markdown_report_blocks
+    assert recovery.json()["state"]["report_loaded"] is True
+    assert invalid.status_code == 404
+    assert options.status_code == 204
 
 
 @pytest.mark.parametrize("transport", ["http", "streamable-http"])

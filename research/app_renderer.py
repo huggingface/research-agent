@@ -43,12 +43,16 @@ PREFAB_OUTPUT_SCHEMA = {
 }
 
 
-def _with_chatgpt_remount_recovery(html: str) -> str:
+def _with_chatgpt_remount_recovery(
+    html: str,
+    widget_domain: str | None = None,
+) -> str:
     """Recover a remounted ChatGPT widget from its scoped tool output."""
     match = _RENDERER_MODULE.search(html)
     if match is None:
         return html
     renderer_url = json.dumps(match.group(1))
+    allowed_origin = json.dumps(widget_domain)
     script = f"""<script type="module">
 const isPrefabOutput = (value) =>
   value !== null &&
@@ -76,6 +80,51 @@ let fallbackSent = false;
 let rendererReady = false;
 let graceElapsed = false;
 let ignoredToolResultLogged = false;
+let recoveryStarted = false;
+
+const validCapability = (value) => {{
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    typeof value.statusUrl !== "string" ||
+    typeof value.recoveryUrl !== "string"
+  ) return false;
+  try {{
+    return (
+      new URL(value.statusUrl).origin === {allowed_origin} &&
+      new URL(value.recoveryUrl).origin === {allowed_origin}
+    );
+  }} catch {{
+    return false;
+  }}
+}};
+
+const attachCapability = (output, capability) => {{
+  output.state.status_url = capability.statusUrl;
+  output.state.recovery_url = capability.recoveryUrl;
+}};
+
+const persistCapability = (capability) => {{
+  const setState = window.openai?.setWidgetState;
+  if (typeof setState !== "function") return;
+  const current = window.openai?.widgetState ?? {{}};
+  const next = {{
+    ...current,
+    privateContent: {{
+      ...(current.privateContent ?? {{}}),
+      researchPrefab: capability,
+    }},
+  }};
+  try {{
+    Promise.resolve(setState(next)).catch(() => {{}});
+  }} catch {{}}
+}};
+
+const savedCapability = () => {{
+  const capability =
+    window.openai?.widgetState?.privateContent?.researchPrefab;
+  return validCapability(capability) ? capability : null;
+}};
 
 const stopRecovery = () => {{
   window.removeEventListener("openai:set_globals", onOpenAIUpdate);
@@ -102,25 +151,18 @@ const onToolResult = (event) => {{
     return;
   }}
 
+  const capability = message.params?._meta?.research;
+  if (validCapability(capability)) {{
+    attachCapability(message.params.structuredContent, capability);
+    persistCapability(capability);
+  }}
   standardResultSeen = true;
   stopRecovery();
 }};
 
-const recover = () => {{
-  if (
-    standardResultSeen ||
-    fallbackSent ||
-    !rendererReady ||
-    !graceElapsed
-  ) return;
-
-  const output = window.openai?.toolOutput;
-  if (!isPrefabOutput(output)) return;
-
+const dispatchOutput = (output) => {{
   fallbackSent = true;
   stopRecovery();
-
-  // Prefab 0.20.2 consumes host results through this version-pinned transport.
   window.dispatchEvent(new MessageEvent("message", {{
     source: window.parent,
     data: {{
@@ -129,13 +171,53 @@ const recover = () => {{
       params: {{ structuredContent: output }},
     }},
   }}));
-  console.info(
-    "[research-prefab] hydrated from window.openai.toolOutput"
-  );
+}};
+
+const recover = async () => {{
+  if (
+    standardResultSeen ||
+    fallbackSent ||
+    recoveryStarted ||
+    !rendererReady ||
+    !graceElapsed
+  ) return;
+
+  const output = window.openai?.toolOutput;
+  if (isPrefabOutput(output)) {{
+    dispatchOutput(output);
+    console.info(
+      "[research-prefab] hydrated from window.openai.toolOutput"
+    );
+    return;
+  }}
+
+  const capability = savedCapability();
+  if (capability === null) return;
+  recoveryStarted = true;
+  try {{
+    const response = await fetch(capability.recoveryUrl, {{
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
+    }});
+    if (!response.ok) throw new Error(`Recovery failed: ${{response.status}}`);
+    const recovered = await response.json();
+    if (!isPrefabOutput(recovered) || standardResultSeen) return;
+    attachCapability(recovered, capability);
+    dispatchOutput(recovered);
+    console.info(
+      "[research-prefab] hydrated from direct status endpoint"
+    );
+  }} catch (error) {{
+    console.warn("[research-prefab] direct recovery failed", error);
+    recoveryStarted = false;
+  }}
 }};
 
 const onOpenAIUpdate = (event) => {{
-  if (event.detail?.globals?.toolOutput !== undefined) recover();
+  if (
+    event.detail?.globals?.toolOutput !== undefined ||
+    event.detail?.globals?.widgetState !== undefined
+  ) recover();
 }};
 
 window.addEventListener("message", onToolResult, {{
@@ -178,7 +260,6 @@ class RendererUriTransform(Transform):
         ui["resourceUri"] = self.resource_uri
         meta["ui"] = ui
         meta["ui/resourceUri"] = self.resource_uri
-        meta["openai/widgetAccessible"] = True
         return tool.model_copy(
             update={
                 "meta": meta,
@@ -197,9 +278,16 @@ def install_versioned_renderer(
     widget_domain: str | None = None,
 ) -> str:
     """Register the Prefab renderer at a URI derived from its exact content."""
-    html = _with_chatgpt_remount_recovery(get_renderer_html()).replace(
+    widget_domain = widget_domain or default_widget_domain()
+    html = _with_chatgpt_remount_recovery(
+        get_renderer_html(),
+        widget_domain,
+    ).replace(
         "</head>",
-        f'<meta name="research-app-build" content="{build_id}"></head>',
+        (
+            '<meta name="referrer" content="no-referrer">'
+            f'<meta name="research-app-build" content="{build_id}"></head>'
+        ),
     )
     digest = hashlib.sha256(html.encode()).hexdigest()[:12]
     tool_digest = hash_tool(app_name, tool_name)
@@ -208,8 +296,11 @@ def install_versioned_renderer(
     domains = list(csp_data.get("resource_domains") or ())
     domains.extend(domain for domain in resource_domains if domain not in domains)
     csp_data["resource_domains"] = domains
+    connect_domains = list(csp_data.get("connect_domains") or ())
+    if widget_domain and widget_domain not in connect_domains:
+        connect_domains.append(widget_domain)
+    csp_data["connect_domains"] = connect_domains
     csp = ResourceCSP(**csp_data)
-    widget_domain = widget_domain or _default_widget_domain()
 
     @mcp.resource(
         resource_uri,
@@ -228,7 +319,7 @@ def install_versioned_renderer(
     return digest
 
 
-def _default_widget_domain() -> str | None:
+def default_widget_domain() -> str | None:
     value = os.getenv("FAST_AGENT_OAUTH_RESOURCE_URL", "").strip().rstrip("/")
     if not value:
         host = os.getenv("SPACE_HOST", "").strip().strip("/")

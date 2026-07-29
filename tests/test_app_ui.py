@@ -48,7 +48,7 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
     assert "research_chat_context" in payload
     assert "research_status" in payload
     assert "start_research" not in payload
-    assert '"duration": 1500' in payload
+    assert '"duration": 4000' in payload
     assert "updateContext" in payload
     assert "{{ $result.markdown }}" in payload
     assert "sendMessage" in payload

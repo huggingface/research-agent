@@ -32,12 +32,12 @@ def test_deployments_request_the_approved_scopes() -> None:
         assert scopes(readme) == EXPECTED_SCOPES
 
 
-def test_supported_agent_tracks_current_fast_agent() -> None:
+def test_researcher_pins_compatible_fast_agent_stack() -> None:
     dockerfile = (ROOT / "deploy/researcher/Dockerfile").read_text()
     config = (ROOT / "research/fast-agent.yaml").read_text()
 
-    assert "fast-agent-mcp" in dockerfile
-    assert "fast-agent-mcp==" not in dockerfile
+    assert "fast-agent-mcp==0.9.27" in dockerfile
+    assert "'fastmcp[apps]==3.4.4'" in dockerfile
     assert 'FASTMCP_HTTP_ALLOWED_HOSTS="[\\\"*\\\"]"' in dockerfile
     assert "llm_retries: 5" in config
 
