@@ -24,6 +24,7 @@ from .app_jobs import (
 from .app_renderer import app_build_id, install_versioned_renderer
 from .app_ui import build_research_ui
 from .hf_design import HF_RESOURCE_DOMAINS, HFDesign
+from .landing_page import register_landing_page
 from .research_runner import ResearchRunner
 
 RESEARCH_HOME = Path(__file__).parent
@@ -228,6 +229,7 @@ async def main() -> None:
             build_id=build_id,
             resource_domains=HF_RESOURCE_DOMAINS,
         )
+        register_landing_page(mcp)
         await mcp.run_http_async(
             transport=args.transport,
             host=args.host,

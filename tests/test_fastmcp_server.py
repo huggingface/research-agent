@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+import httpx
 import pytest
 from fast_agent import AgentAuth
 from fastmcp import Client, FastMCP, FastMCPApp
@@ -17,6 +18,7 @@ from research.fastmcp_server import (
     use_stateless_http,
 )
 from research.hf_design import HF_RESOURCE_DOMAINS
+from research.landing_page import LANDING_PAGE_CSP, register_landing_page
 
 
 class RunnerSimulator:
@@ -48,6 +50,26 @@ def test_explicit_caller_auth_is_preserved_for_agent_initialization() -> None:
 
 def test_production_uses_hub_classic_design() -> None:
     assert PRODUCTION_UI_DESIGN == "hub-classic"
+
+
+@pytest.mark.asyncio
+async def test_public_landing_page_shows_request_specific_mcp_url() -> None:
+    mcp = FastMCP("researcher")
+    register_landing_page(mcp)
+    app = mcp.http_app(path="/mcp", transport="http", stateless_http=True)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="https://researcher.example",
+    ) as client:
+        landing = await client.get("/")
+
+    assert landing.status_code == 200
+    assert landing.headers["content-type"].startswith("text/html")
+    assert "Hugging Face Research MCP Server" in landing.text
+    assert "https://researcher.example/mcp" in landing.text
+    assert landing.headers["content-security-policy"] == LANDING_PAGE_CSP
+    assert any(getattr(route, "path", None) == "/mcp" for route in app.routes)
 
 
 @pytest.mark.asyncio
