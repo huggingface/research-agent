@@ -5,6 +5,7 @@ __pycache__/
 # Generated build and preview output.
 .build/
 .artifacts/
+Trace-*.json.gz
 
 # Windows download metadata.
 *:Zone.Identifier

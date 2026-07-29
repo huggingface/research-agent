@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from fast_agent import AgentAuth
 from fastmcp import Client, FastMCP, FastMCPApp
+
 from research.app_auth import effective_agent_auth
 from research.app_jobs import ResearchJobStore
 from research.fastmcp_server import (
@@ -107,8 +107,20 @@ async def test_research_ui_csp_allows_google_font_resources() -> None:
     def researcher() -> dict[str, str]:
         return {"status": "ok"}
 
+    existing = await app.get_tool("researcher")
+    assert existing is not None
+    existing.meta.setdefault("ui", {})["csp"] = {
+        "connectDomains": ["https://api.example.com"],
+        "resourceDomains": ["https://assets.example.com"],
+    }
     configure_research_ui_csp(app)
     tool = await app.get_tool("researcher")
 
     assert tool is not None
-    assert tool.meta["ui"]["csp"]["resourceDomains"] == list(HF_RESOURCE_DOMAINS)
+    assert tool.meta["ui"]["csp"] == {
+        "connectDomains": ["https://api.example.com"],
+        "resourceDomains": [
+            "https://assets.example.com",
+            *HF_RESOURCE_DOMAINS,
+        ],
+    }

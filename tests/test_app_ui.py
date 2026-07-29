@@ -24,9 +24,7 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
         "turn_count": 3,
         "cancellable": False,
         "markdown_report": "# Findings",
-        "archive_space_url": (
-            "https://huggingface.co/spaces/alice/research-agent"
-        ),
+        "archive_space_url": ("https://huggingface.co/spaces/alice/research-agent"),
         "archive_app_url": "https://alice-research-agent.hf.space",
         "archive_template_version": "1.0.0",
         "html_report_ready": True,
@@ -67,7 +65,12 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
     assert payload.index("dispatch-markdown-report") < payload.index(
         "dispatch-report-actions"
     )
-    assert '"when": "{{ job.markdown_report }}"' in payload
+    assert "job.markdown_report_ready && !report_loaded" in payload
+    assert "$result.markdown_report_revision == report_revision" in payload
+    assert "$result.revision == job.markdown_report_revision" in payload
+    assert "research_report_preview" in payload
+    assert '"key": "report_blocks"' in payload
+    assert '"type": "Image"' in payload
     assert "openLink" in payload
     assert "Cancel this research run?" in payload
     assert "Briefing the researcher" in payload

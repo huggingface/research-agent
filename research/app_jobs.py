@@ -65,6 +65,8 @@ class ResearchJob:
     events: list[dict[str, Any]] = field(default_factory=list)
     result: str | None = None
     markdown_report: str | None = None
+    markdown_report_blocks: list[dict[str, str]] = field(default_factory=list)
+    markdown_report_revision: int = 0
     markdown_report_uri: str | None = None
     markdown_report_error: str | None = None
     archive_space_url: str | None = None
@@ -164,7 +166,8 @@ class ResearchJob:
             "activity_source_label": display_activity_source(self.activity_source),
             "turn_count": self.turn_count,
             "result": self.result,
-            "markdown_report": self.markdown_report,
+            "markdown_report_ready": bool(self.markdown_report_uri),
+            "markdown_report_revision": self.markdown_report_revision,
             "markdown_report_uri": self.markdown_report_uri,
             "markdown_report_error": self.markdown_report_error,
             "archive_space_url": self.archive_space_url,
@@ -402,7 +405,8 @@ def unavailable_snapshot(job_id: str) -> dict[str, Any]:
         "activity_source_label": "research / agent_loop",
         "turn_count": 0,
         "result": None,
-        "markdown_report": None,
+        "markdown_report_ready": False,
+        "markdown_report_revision": 0,
         "markdown_report_uri": None,
         "markdown_report_error": None,
         "archive_space_url": None,

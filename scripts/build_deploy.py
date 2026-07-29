@@ -41,6 +41,7 @@ TARGETS = {
         Overlay("research/__init__.py", "research/__init__.py"),
         Overlay("research/app_jobs.py", "research/app_jobs.py"),
         Overlay("research/app_observability.py", "research/app_observability.py"),
+        Overlay("research/report_preview.py", "research/report_preview.py"),
         Overlay("research/archive_provisioning.py", "research/archive_provisioning.py"),
         Overlay("research/research_workspace.py", "research/research_workspace.py"),
         Overlay("research/skills/birch-html", "skills/birch-html"),

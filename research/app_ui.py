@@ -15,8 +15,8 @@ from prefab_ui.components import (
     Dialog,
     Div,
     Heading,
-    Image,
     If,
+    Image,
     Markdown,
     Row,
     Separator,
@@ -33,6 +33,7 @@ from .hf_design import (
     design_css_class,
     validate_design,
 )
+from .report_preview import markdown_only_preview
 
 BROADSHEET_CSS = """
 .dispatch-app {
@@ -234,6 +235,13 @@ BROADSHEET_CSS = """
 }
 .dispatch-markdown-body > :last-child {
   margin-bottom: 0;
+}
+.dispatch-markdown-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 18px auto;
+  border-radius: 8px;
 }
 .dispatch-log {
   padding: 12px 16px;
@@ -541,6 +549,10 @@ def _ui_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     prepared.setdefault("headline", "Briefing the researcher")
     prepared.setdefault("workspace_id", None)
     prepared.setdefault(
+        "markdown_report_ready",
+        bool(prepared.get("markdown_report_uri") or prepared.get("markdown_report")),
+    )
+    prepared.setdefault(
         "activity_source_label", _display_source(prepared.get("activity_source"))
     )
     for summary in prepared.get("recent_summaries", []):
@@ -561,13 +573,20 @@ def build_research_ui(
         design = validate_design(design)
     on_mount = None
     if live:
+        report_is_current = RESULT.markdown_report_revision == STATE.report_revision
         on_mount = SetInterval(
             duration=1500,
             while_=~STATE.job.done,
             on_tick=CallTool(
                 "research_status",
                 arguments={"job_id": STATE.job_id},
-                on_success=SetState("job", RESULT),
+                on_success=[
+                    SetState(
+                        "report_loaded",
+                        report_is_current.then(STATE.report_loaded, False),
+                    ),
+                    SetState("job", RESULT),
+                ],
             ),
         )
 
@@ -618,6 +637,43 @@ def build_research_ui(
     if not live:
         read_report = SetState("chat_sent", True)
 
+    load_report = CallTool(
+        "research_report_preview",
+        arguments={"job_id": STATE.job_id},
+        on_success=[
+            SetState(
+                "report_blocks",
+                (RESULT.revision == STATE.job.markdown_report_revision).then(
+                    RESULT.blocks,
+                    STATE.report_blocks,
+                ),
+            ),
+            SetState(
+                "report_loaded",
+                RESULT.revision == STATE.job.markdown_report_revision,
+            ),
+            SetState(
+                "report_revision",
+                (RESULT.revision == STATE.job.markdown_report_revision).then(
+                    RESULT.revision,
+                    STATE.report_revision,
+                ),
+            ),
+        ],
+        on_error=[
+            SetState("report_loaded", True),
+            SetState(
+                "report_revision",
+                STATE.job.markdown_report_revision,
+            ),
+            ShowToast(
+                "Could not load the in-app report preview.",
+                description="The Markdown and HTML artifacts remain available.",
+                variant="error",
+            ),
+        ],
+    )
+
     css_class = "dispatch-app"
     css = [BROADSHEET_CSS]
     stylesheets = None
@@ -633,6 +689,19 @@ def build_research_ui(
         stylesheets=stylesheets,
         state={
             "job": snapshot,
+            "report_blocks": (
+                snapshot.get("markdown_report_blocks")
+                or (
+                    markdown_only_preview(snapshot["markdown_report"])
+                    if snapshot.get("markdown_report")
+                    else []
+                )
+            ),
+            "report_loaded": bool(
+                snapshot.get("markdown_report_blocks")
+                or snapshot.get("markdown_report")
+            ),
+            "report_revision": snapshot.get("markdown_report_revision", 0),
             "topic": topic,
             "job_id": snapshot["job_id"],
             "cancel_requested": False,
@@ -788,29 +857,43 @@ def build_research_ui(
 
             with Div(css_class="dispatch-body"):
                 with If(
-                    STATE.job.markdown_report
+                    STATE.job.markdown_report_ready
                     | (STATE.job.phase == "reporting")
                     | (STATE.job.phase == "wrapping_up")
                     | (STATE.job.status == "finalizing")
                     | (STATE.job.status == "completed")
                 ):
-                    with If(STATE.job.markdown_report):
+                    with If(STATE.job.markdown_report_ready & ~STATE.report_loaded):
+                        Div(on_mount=load_report)
+                    with If(STATE.report_loaded):
                         with Div(css_class="dispatch-markdown-report"):
                             Text(
                                 "Markdown report",
                                 css_class="dispatch-section-label",
                             )
-                            Markdown(
-                                STATE.job.markdown_report,
-                                css_class="dispatch-markdown-body",
-                            )
+                            with ForEach("report_blocks") as block:
+                                with If(block.kind == "markdown"):
+                                    Markdown(
+                                        block.content,
+                                        css_class="dispatch-markdown-body",
+                                    )
+                                with If(block.kind == "image"):
+                                    Image(
+                                        src=block.src,
+                                        alt=block.alt,
+                                        width="100%",
+                                        height="auto",
+                                        css_class="dispatch-markdown-image",
+                                    )
                     with Div(css_class="dispatch-report-actions"):
                         Button(
-                            "{{ job.markdown_report ? 'Add to chat' : "
+                            "{{ job.markdown_report_ready ? 'Add to chat' : "
                             "'Preparing Markdown…' }}",
                             variant="outline",
                             css_class="dispatch-report-action",
-                            disabled=(STATE.chat_sent | ~STATE.job.markdown_report),
+                            disabled=(
+                                STATE.chat_sent | ~STATE.job.markdown_report_ready
+                            ),
                             onClick=read_report,
                         )
                         Button(

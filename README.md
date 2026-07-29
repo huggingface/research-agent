@@ -162,6 +162,7 @@ uv run --with fast-agent-mcp \
   --with 'fastmcp[apps]==3.4.4' \
   --with 'prefab-ui==0.20.2' \
   --with huggingface_hub \
+  --with pillow \
   python fastmcp_research_app.py \
   --host 127.0.0.1 \
   --port 8723
@@ -308,6 +309,7 @@ Render real component trees with static states and local Chrome:
 uv run --with fast-agent-mcp \
   --with 'fastmcp[apps]==3.4.4' \
   --with 'prefab-ui==0.20.2' \
+  --with pillow \
   python scripts/render_app_preview.py --state all
 ```
 
@@ -320,6 +322,7 @@ Render the Hugging Face design packs:
 uv run --with fast-agent-mcp \
   --with 'fastmcp[apps]==3.4.4' \
   --with 'prefab-ui==0.20.2' \
+  --with pillow \
   python scripts/render_design_packs.py
 ```
 

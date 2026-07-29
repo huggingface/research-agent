@@ -128,6 +128,10 @@ async def test_markdown_report_is_captured_from_current_session() -> None:
         current_research_workspace.reset(token)
 
     assert job.markdown_report == "# Report\n\nVerified result."
+    assert job.markdown_report_blocks == [
+        {"kind": "markdown", "content": "# Report\n\nVerified result."}
+    ]
+    assert job.markdown_report_revision == 1
     assert job.markdown_report_uri == f"{workspace.output}report.md"
     assert job.archive_space_url == workspace.archive_space_url
     assert job.archive_app_url == workspace.archive_app_url

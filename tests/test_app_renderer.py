@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from fastmcp import Client, FastMCP
 from fastmcp.apps import FastMCPApp
 from fastmcp.server.providers.addressing import hash_tool
@@ -26,6 +25,10 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
         app_name="Hugging Face Researcher",
         tool_name="researcher",
         build_id="a1b2c3d4",
+        resource_domains=(
+            "https://fonts.googleapis.com",
+            "https://fonts.gstatic.com",
+        ),
     )
 
     async with Client(mcp) as client:
@@ -33,9 +36,16 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
         tool = next(tool for tool in tools if tool.name == "researcher")
         uri = tool.meta["ui"]["resourceUri"]
         contents = await client.read_resource(uri)
+        resources = await client.list_resources()
 
     tool_digest = hash_tool("Hugging Face Researcher", "researcher")
     assert uri == (f"ui://prefab/tool/{tool_digest}/renderer-{digest}.html")
     assert contents[0].mimeType == "text/html;profile=mcp-app"
     assert "@prefecthq/prefab-ui@0.20.2" in contents[0].text
     assert 'content="a1b2c3d4"' in contents[0].text
+    resource = next(resource for resource in resources if str(resource.uri) == uri)
+    assert resource.meta["ui"]["csp"]["resourceDomains"] == [
+        "https://cdn.jsdelivr.net",
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+    ]

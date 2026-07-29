@@ -10,12 +10,11 @@ from typing import Annotated, Any
 from fast_agent import FastAgent
 from fastmcp import Context as MCPContext
 from fastmcp import FastMCP, FastMCPApp
-from fastmcp.apps import ResourceCSP
-from pydantic import Field
 from prefab_ui.app import PrefabApp
+from pydantic import Field
 
-from .app_auth import auth_provider, http_middleware, request_auth
 from .app_artifacts import read_bucket_markdown
+from .app_auth import auth_provider, http_middleware, request_auth
 from .app_jobs import (
     ResearchJobStore,
     ResearchTaskRegistry,
@@ -38,13 +37,16 @@ def configure_research_ui_csp(
     tool_name: str = "researcher",
 ) -> None:
     """Allow the Google-hosted Hub fonts used by design variants."""
-    csp = ResourceCSP(resource_domains=list(HF_RESOURCE_DOMAINS)).model_dump(
-        by_alias=True,
-        exclude_none=True,
-    )
     for tool in app._local._components.values():
         if getattr(tool, "name", None) == tool_name:
-            tool.meta.setdefault("ui", {})["csp"] = csp
+            ui = tool.meta.setdefault("ui", {})
+            csp = dict(ui.get("csp") or {})
+            domains = list(csp.get("resourceDomains") or ())
+            domains.extend(
+                domain for domain in HF_RESOURCE_DOMAINS if domain not in domains
+            )
+            csp["resourceDomains"] = domains
+            ui["csp"] = csp
             return
     raise RuntimeError(f"Prefab UI tool was not registered: {tool_name}")
 
@@ -130,6 +132,20 @@ def register_research_app(
         return job.snapshot() if job else unavailable_snapshot(job_id)
 
     @app.tool()
+    async def research_report_preview(
+        job_id: str,
+        ctx: MCPContext,
+    ) -> dict[str, Any]:
+        auth = request_auth()
+        job = await jobs.get(job_id, owner_id(auth, ctx.session_id))
+        if job is None or not job.markdown_report_uri:
+            raise RuntimeError("Research Markdown report is not available yet")
+        return {
+            "blocks": job.markdown_report_blocks,
+            "revision": job.markdown_report_revision,
+        }
+
+    @app.tool()
     async def cancel_research(
         job_id: str,
         ctx: MCPContext,
@@ -210,6 +226,7 @@ async def main() -> None:
             app_name="Hugging Face Researcher",
             tool_name="researcher",
             build_id=build_id,
+            resource_domains=HF_RESOURCE_DOMAINS,
         )
         await mcp.run_http_async(
             transport=args.transport,

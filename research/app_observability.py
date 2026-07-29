@@ -12,15 +12,15 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from huggingface_hub import HfApi, HfFileSystem
-from huggingface_hub.errors import BucketNotFoundError
-
 from fast_agent.mcp.tool_execution_handler import ToolExecutionHandler
 from fast_agent.session import SessionTraceExporter
 from fast_agent.session.session_manager import SessionManager
 from fast_agent.session.trace_export_models import ExportRequest
+from huggingface_hub import HfApi, HfFileSystem
+from huggingface_hub.errors import BucketNotFoundError
 
 from .app_jobs import ResearchJob
+from .report_preview import ImageReader, build_report_preview
 from .research_workspace import ResearchWorkspace, current_research_workspace
 
 MarkdownReader = Callable[[ResearchWorkspace], Awaitable[str]]
@@ -208,6 +208,7 @@ async def capture_markdown_report(
     job: ResearchJob,
     *,
     reader: MarkdownReader | None = None,
+    image_reader: ImageReader | None = None,
 ) -> None:
     workspace = current_research_workspace.get()
     if workspace is None:
@@ -225,6 +226,12 @@ async def capture_markdown_report(
             + "\n\n_This in-app preview was truncated; open the artifact for the full report._"
         )
     job.markdown_report = markdown
+    job.markdown_report_blocks = await build_report_preview(
+        markdown,
+        workspace,
+        reader=image_reader,
+    )
+    job.markdown_report_revision += 1
     job.markdown_report_uri = uri
     job.markdown_report_error = None
     job.archive_space_url = workspace.archive_space_url

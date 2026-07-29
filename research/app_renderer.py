@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from pathlib import Path
+
 from fastmcp import FastMCP
 from fastmcp.apps.config import UI_MIME_TYPE, AppConfig, ResourceCSP
 from fastmcp.server.providers.addressing import hash_tool
@@ -40,6 +41,7 @@ def install_versioned_renderer(
     app_name: str,
     tool_name: str,
     build_id: str,
+    resource_domains: Sequence[str] = (),
 ) -> str:
     """Register the Prefab renderer at a URI derived from its exact content."""
     html = get_renderer_html().replace(
@@ -49,7 +51,11 @@ def install_versioned_renderer(
     digest = hashlib.sha256(html.encode()).hexdigest()[:12]
     tool_digest = hash_tool(app_name, tool_name)
     resource_uri = f"ui://prefab/tool/{tool_digest}/renderer-{digest}.html"
-    csp = ResourceCSP(**(get_renderer_csp() or {}))
+    csp_data = dict(get_renderer_csp() or {})
+    domains = list(csp_data.get("resource_domains") or ())
+    domains.extend(domain for domain in resource_domains if domain not in domains)
+    csp_data["resource_domains"] = domains
+    csp = ResourceCSP(**csp_data)
 
     @mcp.resource(
         resource_uri,

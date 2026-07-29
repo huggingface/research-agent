@@ -22,6 +22,23 @@ def bearer(subject: str, token: str = "secret") -> AgentAuth:
     )
 
 
+def test_status_snapshot_excludes_report_payload() -> None:
+    job = ResearchJob(id="job", topic="topic", owner_id="alice")
+    job.markdown_report = "# Report\n\nPrivate report body."
+    job.markdown_report_blocks = [
+        {"kind": "image", "src": "data:image/png;base64,c2VjcmV0", "alt": "Chart"}
+    ]
+    job.markdown_report_uri = "hf://buckets/alice/research/output/report.md"
+
+    snapshot = job.snapshot()
+
+    assert snapshot["markdown_report_ready"]
+    assert "markdown_report" not in snapshot
+    assert "markdown_report_blocks" not in snapshot
+    assert "Private report body" not in str(snapshot)
+    assert "data:image" not in str(snapshot)
+
+
 @pytest.mark.asyncio
 async def test_begin_is_idempotent_without_storing_token() -> None:
     auth = bearer("alice")
