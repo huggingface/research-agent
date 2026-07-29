@@ -32,6 +32,7 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
             "https://fonts.googleapis.com",
             "https://fonts.gstatic.com",
         ),
+        widget_domain="https://researcher.example",
     )
 
     async with Client(mcp) as client:
@@ -63,3 +64,6 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
         "https://fonts.googleapis.com",
         "https://fonts.gstatic.com",
     ]
+    assert resource.meta["ui"]["domain"] == "https://researcher.example"
+    assert resource.meta["openai/widgetDomain"] == "https://researcher.example"
+    assert resource.meta["ui"]["prefersBorder"] is True

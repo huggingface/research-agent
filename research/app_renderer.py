@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from collections.abc import Sequence
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastmcp import FastMCP
 from fastmcp.apps.config import UI_MIME_TYPE, AppConfig, ResourceCSP
@@ -76,6 +78,7 @@ def install_versioned_renderer(
     tool_name: str,
     build_id: str,
     resource_domains: Sequence[str] = (),
+    widget_domain: str | None = None,
 ) -> str:
     """Register the Prefab renderer at a URI derived from its exact content."""
     html = get_renderer_html().replace(
@@ -90,31 +93,52 @@ def install_versioned_renderer(
     domains.extend(domain for domain in resource_domains if domain not in domains)
     csp_data["resource_domains"] = domains
     csp = ResourceCSP(**csp_data)
+    widget_domain = widget_domain or _default_widget_domain()
     openai_csp = {
         "connect_domains": list(csp.connect_domains or ()),
         "resource_domains": list(csp.resource_domains or ()),
         "frame_domains": list(csp.frame_domains or ()),
     }
 
+    resource_meta = {
+        "openai/widgetDescription": (
+            "Live progress and final reports from the Hugging Face Research MCP Server."
+        ),
+        "openai/widgetPrefersBorder": True,
+        "openai/widgetCSP": openai_csp,
+    }
+    if widget_domain:
+        resource_meta["openai/widgetDomain"] = widget_domain
+
     @mcp.resource(
         resource_uri,
         name="Versioned Prefab Renderer",
         mime_type=UI_MIME_TYPE,
-        app=AppConfig(csp=csp),
-        meta={
-            "openai/widgetDescription": (
-                "Live progress and final reports from the Hugging Face "
-                "Research MCP Server."
-            ),
-            "openai/widgetPrefersBorder": True,
-            "openai/widgetCSP": openai_csp,
-        },
+        app=AppConfig(
+            csp=csp,
+            domain=widget_domain,
+            prefers_border=True,
+        ),
+        meta=resource_meta,
     )
     def prefab_renderer() -> str:
         return html
 
     mcp.add_transform(RendererUriTransform(tool_name, resource_uri))
     return digest
+
+
+def _default_widget_domain() -> str | None:
+    value = os.getenv("FAST_AGENT_OAUTH_RESOURCE_URL", "").strip().rstrip("/")
+    if not value:
+        host = os.getenv("SPACE_HOST", "").strip().strip("/")
+        value = host if "://" in host else f"https://{host}" if host else ""
+    if not value:
+        return None
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"Invalid MCP App widget domain: {value!r}")
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 def app_build_id(home: Path) -> str:
