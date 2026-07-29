@@ -7,7 +7,17 @@ from fastmcp.server.providers.addressing import hash_tool
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import Heading
 
-from research.app_renderer import PREFAB_OUTPUT_SCHEMA, install_versioned_renderer
+from research.app_renderer import (
+    PREFAB_OUTPUT_SCHEMA,
+    _with_chatgpt_remount_recovery,
+    install_versioned_renderer,
+)
+
+
+def test_remount_recovery_leaves_bundled_renderer_unchanged() -> None:
+    html = '<script type="module" crossorigin>console.log("bundled")</script>'
+
+    assert _with_chatgpt_remount_recovery(html) == html
 
 
 @pytest.mark.asyncio
@@ -50,8 +60,14 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
     assert result.structured_content is not None
     assert {"$prefab", "view", "state"} <= result.structured_content.keys()
     assert contents[0].mimeType == "text/html;profile=mcp-app"
-    assert "@prefecthq/prefab-ui@0.20.2" in contents[0].text
-    assert 'content="a1b2c3d4"' in contents[0].text
+    html = contents[0].text
+    assert "@prefecthq/prefab-ui@0.20.2" in html
+    assert 'content="a1b2c3d4"' in html
+    assert "window.openai?.toolOutput" in html
+    assert 'method: "ui/notifications/tool-result"' in html
+    assert "params: { structuredContent: output }" in html
+    assert "window.openai.widgetState" not in html
+    assert "localStorage" not in html
     resource = next(resource for resource in resources if str(resource.uri) == uri)
     assert resource.meta["ui"]["csp"]["resourceDomains"] == [
         "https://cdn.jsdelivr.net",

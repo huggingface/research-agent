@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -14,6 +16,10 @@ from fastmcp.server.providers.addressing import hash_tool
 from fastmcp.server.transforms import Transform
 from fastmcp.tools.base import Tool
 from prefab_ui.renderer import get_renderer_csp, get_renderer_html
+
+_RENDERER_MODULE = re.compile(
+    r'<script type="module" crossorigin src="([^"]+)"></script>'
+)
 
 PREFAB_OUTPUT_SCHEMA = {
     "type": "object",
@@ -35,6 +41,68 @@ PREFAB_OUTPUT_SCHEMA = {
     },
     "additionalProperties": True,
 }
+
+
+def _with_chatgpt_remount_recovery(html: str) -> str:
+    """Recover a remounted ChatGPT widget from its scoped tool output."""
+    match = _RENDERER_MODULE.search(html)
+    if match is None:
+        return html
+    renderer_url = json.dumps(match.group(1))
+    script = f"""<script type="module">
+const isPrefabOutput = (value) =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  value.$prefab !== null &&
+  typeof value.$prefab === "object" &&
+  !Array.isArray(value.$prefab) &&
+  typeof value.$prefab.version === "string" &&
+  value.view !== null &&
+  typeof value.view === "object" &&
+  !Array.isArray(value.view) &&
+  value.state !== null &&
+  typeof value.state === "object" &&
+  !Array.isArray(value.state);
+
+let standardResultSeen = false;
+window.addEventListener("message", (event) => {{
+  const message = event.data;
+  if (
+    event.source === window.parent &&
+    message?.jsonrpc === "2.0" &&
+    message?.method === "ui/notifications/tool-result" &&
+    isPrefabOutput(message.params?.structuredContent)
+  ) {{
+    standardResultSeen = true;
+  }}
+}}, {{ capture: true, passive: true }});
+
+await import({renderer_url});
+
+for (const delay of [1500, 1500]) {{
+  await new Promise((resolve) => setTimeout(resolve, delay));
+  if (standardResultSeen) break;
+
+  const output = window.openai?.toolOutput;
+  if (!isPrefabOutput(output)) continue;
+
+  // Prefab 0.20.2 consumes host results through this version-pinned transport.
+  window.dispatchEvent(new MessageEvent("message", {{
+    source: window.parent,
+    data: {{
+      jsonrpc: "2.0",
+      method: "ui/notifications/tool-result",
+      params: {{ structuredContent: output }},
+    }},
+  }}));
+  console.info(
+    "[research-prefab] hydrated from window.openai.toolOutput"
+  );
+  break;
+}}
+</script>"""
+    return _RENDERER_MODULE.sub(script, html, count=1)
 
 
 class RendererUriTransform(Transform):
@@ -73,7 +141,7 @@ def install_versioned_renderer(
     widget_domain: str | None = None,
 ) -> str:
     """Register the Prefab renderer at a URI derived from its exact content."""
-    html = get_renderer_html().replace(
+    html = _with_chatgpt_remount_recovery(get_renderer_html()).replace(
         "</head>",
         f'<meta name="research-app-build" content="{build_id}"></head>',
     )
