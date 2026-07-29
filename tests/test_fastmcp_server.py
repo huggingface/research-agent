@@ -73,6 +73,10 @@ async def test_public_landing_page_shows_request_specific_mcp_url() -> None:
     assert landing.headers["content-type"].startswith("text/html")
     assert "Hugging Face Research MCP Server" in landing.text
     assert "https://researcher.example/mcp" in landing.text
+    assert 'id="copy-url"' in landing.text
+    assert "navigator.clipboard.writeText" in landing.text
+    assert "https://huggingface.co/spaces/evalstate/researcher-reports" in landing.text
+    assert "script-src 'unsafe-inline'" in LANDING_PAGE_CSP
     assert landing.headers["content-security-policy"] == LANDING_PAGE_CSP
     assert any(getattr(route, "path", None) == "/mcp" for route in app.routes)
 

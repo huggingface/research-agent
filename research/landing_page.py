@@ -13,6 +13,7 @@ LANDING_PAGE_CSP = (
     "default-src 'none'; "
     "base-uri 'none'; "
     "object-src 'none'; "
+    "script-src 'unsafe-inline'; "
     "style-src 'unsafe-inline'; "
     "img-src data:; "
     "form-action 'none'"
@@ -115,7 +116,7 @@ def landing_page_html(connection_url: str) -> str:
       text-transform: uppercase;
     }}
     code {{
-      display: block;
+      flex: 1;
       padding: 16px;
       overflow-wrap: anywhere;
       border: 1px solid #d1d5db;
@@ -126,7 +127,33 @@ def landing_page_html(connection_url: str) -> str:
       font-size: 14px;
       user-select: all;
     }}
+    .endpoint {{ display: flex; align-items: stretch; gap: 10px; }}
+    button {{
+      min-width: 92px;
+      padding: 0 16px;
+      border: 1px solid #d97706;
+      border-radius: 10px;
+      background: #fffbeb;
+      color: #b45309;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    button:hover {{ background: #fef3c7; }}
+    .examples {{
+      display: inline-block;
+      margin-top: 22px;
+      color: #b45309;
+      font-weight: 650;
+      text-decoration: none;
+    }}
+    .examples:hover {{ text-decoration: underline; }}
     small {{ display: block; margin-top: 22px; color: #9ca3af; }}
+    @media (max-width: 560px) {{
+      main {{ padding: 28px 22px; }}
+      .endpoint {{ flex-direction: column; }}
+      button {{ min-height: 46px; }}
+    }}
     @media (prefers-color-scheme: dark) {{
       :root, body {{ background: #0b0f19; color: #e5e7eb; }}
       body {{
@@ -137,6 +164,11 @@ def landing_page_html(connection_url: str) -> str:
       main {{ border-color: #263044; background: #101623; box-shadow: none; }}
       p {{ color: #9ca3af; }}
       code {{ border-color: #374151; background: #141c2e; color: #fbbf24; }}
+      button {{
+        border-color: #f59e0b;
+        background: #29200c;
+        color: #fbbf24;
+      }}
     }}
   </style>
 </head>
@@ -154,11 +186,38 @@ def landing_page_html(connection_url: str) -> str:
       the endpoint below.
     </p>
     <div class="label">MCP connection URL</div>
-    <code>{connection_url}</code>
+    <div class="endpoint">
+      <code id="mcp-url">{connection_url}</code>
+      <button id="copy-url" type="button">Copy</button>
+    </div>
     <small>
       OAuth authentication is handled by Hugging Face when your client connects.
     </small>
+    <a
+      class="examples"
+      href="https://huggingface.co/spaces/evalstate/researcher-reports"
+      target="_blank"
+      rel="noopener noreferrer"
+    >View example research reports ↗</a>
   </main>
+  <script>
+    const button = document.getElementById("copy-url");
+    button.addEventListener("click", async () => {{
+      const value = document.getElementById("mcp-url").textContent.trim();
+      try {{
+        await navigator.clipboard.writeText(value);
+        button.textContent = "Copied";
+      }} catch {{
+        const range = document.createRange();
+        range.selectNodeContents(document.getElementById("mcp-url"));
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = "Select & copy";
+      }}
+      window.setTimeout(() => {{ button.textContent = "Copy"; }}, 1800);
+    }});
+  </script>
 </body>
 </html>
 """
