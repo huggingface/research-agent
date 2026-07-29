@@ -200,6 +200,27 @@ async def test_same_workspace_bucket_url_is_embedded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_same_workspace_bucket_main_revision_url_is_embedded() -> None:
+    reads: list[str] = []
+
+    async def read(_: ResearchWorkspace, path: str) -> bytes:
+        reads.append(path)
+        return PNG
+
+    blocks = await build_report_preview(
+        (
+            "![Chart](https://huggingface.co/buckets/alice/research-agent/"
+            "resolve/main/research-abc/scratch/research/chart.png)"
+        ),
+        workspace(),
+        reader=read,
+    )
+
+    assert reads == ["scratch/research/chart.png"]
+    assert blocks[0]["kind"] == "image"
+
+
+@pytest.mark.asyncio
 async def test_same_workspace_tree_url_is_embedded() -> None:
     reads: list[str] = []
 

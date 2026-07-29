@@ -182,6 +182,7 @@ def _safe_image_path(
             return None
         prefixes = (
             f"/buckets/{workspace.bucket_id}/resolve/{workspace.session_id}/",
+            f"/buckets/{workspace.bucket_id}/resolve/main/{workspace.session_id}/",
             f"/buckets/{workspace.bucket_id}/tree/{workspace.session_id}/",
         )
         prefix = next(
