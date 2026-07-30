@@ -6,20 +6,40 @@ import hashlib
 import json
 import os
 import re
+from collections.abc import Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Mapping
+from typing import Any
 from uuid import uuid4
-
-from huggingface_hub import HfApi, get_token
-from huggingface_hub.errors import BucketNotFoundError
 
 from fast_agent import AgentAuth
 from fast_agent.mcp.server.common import normalize_serve_oauth_provider
-
+from huggingface_hub import HfApi, get_token
+from huggingface_hub.errors import BucketNotFoundError
 
 _SAFE_SEGMENT = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+class WorkspaceProvisionError(RuntimeError):
+    """Safe, user-facing workspace setup failure."""
+
+    code = "HF_WORKSPACE_PROVISION_FAILED"
+
+
+class WorkspaceWriteAuthorizationError(WorkspaceProvisionError):
+    """The caller can read the workspace bucket but cannot write to it."""
+
+    code = "HF_BUCKET_WRITE_NOT_AUTHORIZED"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Your Hugging Face connection can read the existing research workspace "
+            "but is not authorized to write to it. The `contribute-repos` permission "
+            "alone covers only Buckets created by the same OAuth app. Reconnect after "
+            "this app's requested write access is available, or use a new workspace "
+            "created by this app."
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,8 +124,11 @@ def ensure_workspace(
                 token=token,
             )
         except Exception as exc:
-            raise RuntimeError(
-                f"Bucket {bucket_id!r} is accessible but marker write failed: {exc}"
+            if _is_xet_write_forbidden(exc):
+                raise WorkspaceWriteAuthorizationError from exc
+            raise WorkspaceProvisionError(
+                "The research workspace could not be initialized. Reconnect your "
+                "Hugging Face account and try again."
             ) from exc
         marker_paths = (
             f"{root}scratch/.workspace.json",
@@ -123,6 +146,14 @@ def ensure_workspace(
         marker_paths=marker_paths,
         bearer_token=token,
     )
+
+
+def _is_xet_write_forbidden(exc: BaseException) -> bool:
+    """Classify hf-xet 1.5.x's opaque write-token authorization failure."""
+    if not isinstance(exc, ConnectionError):
+        return False
+    detail = str(exc)
+    return "403 Forbidden" in detail and "/xet-write-token" in detail
 
 
 def _token(auth: AgentAuth | None) -> str | None:

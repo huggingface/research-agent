@@ -38,6 +38,8 @@ def test_researcher_pins_compatible_fast_agent_stack() -> None:
 
     assert "fast-agent-mcp==0.9.27" in dockerfile
     assert "'fastmcp[apps]==3.4.4'" in dockerfile
+    assert "huggingface_hub==1.24.0" in dockerfile
+    assert "hf-xet==1.5.2" in dockerfile
     assert 'FASTMCP_HTTP_ALLOWED_HOSTS="[\\\"*\\\"]"' in dockerfile
     assert "llm_retries: 5" in config
 

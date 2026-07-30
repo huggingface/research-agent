@@ -9,7 +9,8 @@ RUN uv pip install --system --no-cache \
     fast-agent-mcp==0.9.27 \
     'fastmcp[apps]==3.4.4' \
     prefab-ui==0.20.2 \
-    huggingface_hub \
+    huggingface_hub==1.24.0 \
+    hf-xet==1.5.2 \
     pillow
 
 COPY --link ./ /app

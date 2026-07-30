@@ -4,10 +4,12 @@ from typing import Any
 
 import httpx
 import pytest
+from fast_agent import AgentAuth
 from huggingface_hub.errors import BucketNotFoundError
 
-from fast_agent import AgentAuth
 from research.research_workspace import (
+    WorkspaceProvisionError,
+    WorkspaceWriteAuthorizationError,
     _safe_session_segment,
     _session_id,
     ensure_workspace,
@@ -28,6 +30,17 @@ class BucketSimulator:
 
     def batch_bucket_files(self, *args: Any, **kwargs: Any) -> None:
         pass
+
+
+class WritableBucketSimulator:
+    def __init__(self, failure: Exception) -> None:
+        self.failure = failure
+
+    def bucket_info(self, bucket_id: str, *, token: str | None) -> None:
+        pass
+
+    def batch_bucket_files(self, *args: Any, **kwargs: Any) -> None:
+        raise self.failure
 
 
 def auth() -> AgentAuth:
@@ -118,3 +131,57 @@ def test_transport_failure_does_not_attempt_creation() -> None:
         )
 
     assert api.create_calls == 0
+
+
+def test_xet_write_forbidden_has_safe_actionable_error() -> None:
+    api = WritableBucketSimulator(
+        ConnectionError(
+            "secret-native-detail: HTTP status client error (403 Forbidden), "
+            "domain: https://huggingface.co/api/buckets/alice/research-agent/"
+            "xet-write-token"
+        )
+    )
+
+    with pytest.raises(WorkspaceWriteAuthorizationError) as caught:
+        ensure_workspace(
+            auth=auth(),
+            request_metadata={"request_session_id": "chat"},
+            open_metadata={},
+            api=api,  # type: ignore[arg-type]
+        )
+
+    assert caught.value.code == "HF_BUCKET_WRITE_NOT_AUTHORIZED"
+    assert "contribute-repos" in str(caught.value)
+    assert "secret-native-detail" not in str(caught.value)
+    assert isinstance(caught.value.__cause__, ConnectionError)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ConnectionError("403 Forbidden at /xet-read-token"),
+        ConnectionError("401 Unauthorized at /xet-write-token"),
+        httpx.HTTPStatusError(
+            "403 Forbidden at /xet-write-token",
+            request=httpx.Request("GET", "https://huggingface.co"),
+            response=httpx.Response(403),
+        ),
+    ],
+)
+def test_other_marker_failures_are_not_misclassified(failure: Exception) -> None:
+    api = WritableBucketSimulator(failure)
+
+    with pytest.raises(WorkspaceProvisionError) as caught:
+        ensure_workspace(
+            auth=auth(),
+            request_metadata={"request_session_id": "chat"},
+            open_metadata={},
+            api=api,  # type: ignore[arg-type]
+        )
+
+    assert not isinstance(caught.value, WorkspaceWriteAuthorizationError)
+    assert str(caught.value) == (
+        "The research workspace could not be initialized. Reconnect your "
+        "Hugging Face account and try again."
+    )
+    assert caught.value.__cause__ is failure
