@@ -118,6 +118,33 @@ def test_archive_rejects_untrusted_markdown_images(tmp_path: Path) -> None:
     assert "onerror" not in html
 
 
+def test_archive_renders_display_math_without_scripts() -> None:
+    module = load_archive_module()
+
+    html = module.render_markdown(
+        r"Before\n\n$$\left(V_n^\ell,L_n^\ell\right)$$\n\nAfter"
+    )
+
+    assert "<math" in html
+    assert 'display="block"' in html
+    assert "$$" not in html
+    assert "<script" not in html
+
+
+def test_archive_math_cannot_emit_active_links_or_markup() -> None:
+    module = load_archive_module()
+
+    html = module.render_markdown(
+        r"$$\href{javascript:alert(1)}{click}$$"
+        "\n\n"
+        r"$$\text{</math><script>alert(1)</script>}$$"
+    )
+
+    assert "javascript:" not in html
+    assert "href=" not in html
+    assert "<script" not in html
+
+
 def test_archive_rejects_paths_outside_a_run(tmp_path: Path) -> None:
     module = load_archive_module()
     archive = module.ResearchArchive(tmp_path)
@@ -345,5 +372,5 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert 'fetch(`/api/runs/${encodeURIComponent(id)}/files`)' in page.text
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/svg+xml")
-    assert client.get("/health").json()["template_version"] == "1.2.7"
+    assert client.get("/health").json()["template_version"] == "1.2.8"
     assert module.TEMPLATE_MARKER["template_version"] == ARCHIVE_TEMPLATE_VERSION

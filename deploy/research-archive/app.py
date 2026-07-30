@@ -6,7 +6,9 @@ import json
 import mimetypes
 import os
 import re
+import secrets
 import shutil
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from html import escape
@@ -19,6 +21,7 @@ import bleach
 import markdown
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse
+from latex2mathml.converter import convert as latex_to_mathml
 
 APP_ROOT = Path(__file__).parent
 DEFAULT_RESEARCH_ROOT = Path(os.getenv("RESEARCH_ROOT", "/research"))
@@ -33,6 +36,60 @@ SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 DATE_PREFIX = re.compile(r"^(?P<date>\d{2}-\d{2}-\d{2})-(?P<slug>.+?)-[a-f0-9]{4}$")
 HEADING = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 IMAGE_TAG = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+DISPLAY_MATH = re.compile(r"(?<!\\)\$\$(.+?)(?<!\\)\$\$", re.DOTALL)
+MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML"
+MATHML_TAGS = {
+    "annotation",
+    "math",
+    "merror",
+    "mfrac",
+    "mi",
+    "mmultiscripts",
+    "mn",
+    "mo",
+    "mover",
+    "mpadded",
+    "mphantom",
+    "mroot",
+    "mrow",
+    "mspace",
+    "msqrt",
+    "mstyle",
+    "msub",
+    "msubsup",
+    "msup",
+    "mtable",
+    "mtd",
+    "mtext",
+    "mtr",
+    "munder",
+    "munderover",
+    "semantics",
+}
+MATHML_ATTRIBUTES = {
+    "accent",
+    "accentunder",
+    "columnalign",
+    "columnspacing",
+    "columnspan",
+    "denomalign",
+    "display",
+    "encoding",
+    "fence",
+    "form",
+    "linethickness",
+    "lspace",
+    "mathvariant",
+    "notation",
+    "numalign",
+    "rowalign",
+    "rowspan",
+    "rspace",
+    "separator",
+    "stretchy",
+    "symmetric",
+    "width",
+}
 SAFE_IMAGE_SUFFIXES = {".jpeg", ".jpg", ".png", ".webp"}
 ARTIFACT_CSP = (
     "default-src 'none'; "
@@ -353,6 +410,7 @@ def render_markdown(
 ) -> str:
     if not source:
         return ""
+    source, math = _extract_display_math(source)
     rendered = markdown.markdown(
         source,
         extensions=["extra", "sane_lists", "tables"],
@@ -367,13 +425,53 @@ def render_markdown(
         protocols={"http", "https", "hf", "mailto"},
         strip=True,
     )
-    return re.sub(
+    cleaned = re.sub(
         r"<img(?P<attributes>[^>]*)>",
         lambda match: (
             match.group(0) if re.search(r"\bsrc\s*=", match.group("attributes")) else ""
         ),
         cleaned,
     )
+    for placeholder, mathml in math.items():
+        cleaned = cleaned.replace(placeholder, mathml)
+    return cleaned
+
+
+def _extract_display_math(source: str) -> tuple[str, dict[str, str]]:
+    math: dict[str, str] = {}
+    nonce = secrets.token_hex(8)
+
+    def replace(match: re.Match[str]) -> str:
+        placeholder = f"LATEXMATH{nonce}{len(math)}BLOCK"
+        tex = match.group(1).strip()
+        try:
+            math[placeholder] = _sanitize_mathml(
+                latex_to_mathml(tex, display="block")
+            )
+        except Exception:
+            math[placeholder] = (
+                f"<pre><code>{escape(f'$$\\n{tex}\\n$$')}</code></pre>"
+            )
+        return placeholder
+
+    return DISPLAY_MATH.sub(replace, source), math
+
+
+def _sanitize_mathml(value: str) -> str:
+    root = ET.fromstring(value)
+    if root.tag.rsplit("}", 1)[-1] != "math":
+        raise ValueError("MathML root must be <math>")
+    for element in root.iter():
+        tag = element.tag.rsplit("}", 1)[-1]
+        if tag not in MATHML_TAGS:
+            raise ValueError(f"Unsupported MathML element: {tag}")
+        element.attrib = {
+            key.rsplit("}", 1)[-1]: attribute[:100]
+            for key, attribute in element.attrib.items()
+            if key.rsplit("}", 1)[-1] in MATHML_ATTRIBUTES
+        }
+    ET.register_namespace("", MATHML_NAMESPACE)
+    return ET.tostring(root, encoding="unicode")
 
 
 def _rewrite_rendered_images(

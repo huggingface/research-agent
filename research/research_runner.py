@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from fast_agent import AgentAuth, AgentRequest, AppOpenRequest
 from fast_agent.llm.request_params import RequestParams
+from huggingface_hub import HfApi
 
 from .activity_narrator import ActivityNarrator, current_activity_narrator
 from .app_auth import effective_agent_auth
@@ -163,18 +165,19 @@ class ResearchRunner:
             await try_export_trace(job, self.home)
             raise
         except Exception as exc:
-            job.error = str(exc)
+            detail = _safe_error_message(exc)
+            job.error = detail
             if job.markdown_report:
                 job.set_activity_summary(
                     "The Markdown research report is ready, but the interactive "
-                    f"HTML report could not be produced — {exc}."
+                    f"HTML report could not be produced — {detail}."
                 )
             else:
                 job.set_activity_summary(
-                    f"Research failed — {exc}. The run stopped before a final "
+                    f"Research failed — {detail}. The run stopped before a final "
                     "report could be produced."
                 )
-            job.add_event(f"Research failed: {exc}", kind="error")
+            job.add_event(f"Research failed: {detail}", kind="error")
             await try_export_trace(job, self.home)
             job.status = "failed"
             job.phase = "failed"
@@ -190,6 +193,8 @@ class ResearchRunner:
         last_error: Exception | None = None
 
         for attempt in range(1, self.html_report_attempts + 1):
+            workspace = None
+            stage = "worker"
             job.birch_finalize_attempts = attempt
             job.status = "running"
             job.set_phase("reporting")
@@ -199,22 +204,49 @@ class ResearchRunner:
                 kind="Report",
             )
             try:
-                await self._invoke_html_agent(job, auth, attempt)
+                workspace = await self._invoke_html_agent(job, auth, attempt)
+                stage = "finalization"
                 job.set_phase("wrapping_up")
                 job.status = "finalizing"
                 urls = await self._finalize_html(job, auth)
+                if workspace is not None:
+                    await self._record_html_attempt(
+                        job,
+                        workspace,
+                        attempt,
+                        status="complete",
+                    )
                 job.html_report_uri, job.html_report_url = urls
                 if job.result and urls[0] not in job.result:
                     job.result += (
                         f"\n\n**Final HTML artifact:**\n- `{urls[0]}`\n- {urls[1]}"
                     )
                 return
-            except asyncio.CancelledError:
+            except asyncio.CancelledError as exc:
+                if workspace is not None and stage == "finalization":
+                    await asyncio.shield(
+                        self._record_html_attempt(
+                            job,
+                            workspace,
+                            attempt,
+                            status="finalization-cancelled",
+                            error=exc,
+                        )
+                    )
                 raise
             except Exception as exc:
-                last_error = exc
+                detail = _safe_error_message(exc)
+                last_error = RuntimeError(detail)
+                if workspace is not None and stage == "finalization":
+                    await self._record_html_attempt(
+                        job,
+                        workspace,
+                        attempt,
+                        status="finalization-failed",
+                        error=exc,
+                    )
                 job.add_event(
-                    f"HTML report attempt {attempt} failed: {exc}",
+                    f"HTML report attempt {attempt} failed: {detail}",
                     kind="artifact",
                 )
 
@@ -228,7 +260,7 @@ class ResearchRunner:
         job: ResearchJob,
         auth: AgentAuth,
         attempt: int,
-    ) -> None:
+    ):
         workspace = await asyncio.to_thread(
             ensure_workspace,
             auth=auth,
@@ -242,10 +274,61 @@ class ResearchRunner:
             kind="Report",
         )
         job_token = current_research_job.set(job)
+        await self._record_html_attempt(job, workspace, attempt, status="started")
         try:
             await generate_birch_report(workspace, attempt=attempt)
+        except asyncio.CancelledError as exc:
+            await self._record_html_attempt(
+                job,
+                workspace,
+                attempt,
+                status="cancelled",
+                error=exc,
+            )
+            raise
+        except Exception as exc:
+            await self._record_html_attempt(
+                job,
+                workspace,
+                attempt,
+                status="failed",
+                error=exc,
+            )
+            raise
+        else:
+            await self._record_html_attempt(
+                job,
+                workspace,
+                attempt,
+                status="worker-complete",
+            )
         finally:
             current_research_job.reset(job_token)
+        return workspace
+
+    async def _record_html_attempt(
+        self,
+        job: ResearchJob,
+        workspace,
+        attempt: int,
+        *,
+        status: str,
+        error: BaseException | None = None,
+    ) -> None:
+        try:
+            await asyncio.to_thread(
+                _persist_html_attempt,
+                workspace,
+                attempt,
+                status=status,
+                error=error,
+            )
+        except Exception as exc:
+            job.add_event(
+                "Could not persist HTML attempt "
+                f"{attempt} diagnostics: {_safe_error_message(exc)}",
+                kind="artifact",
+            )
 
     async def _finalize_html(
         self,
@@ -276,3 +359,60 @@ def _workspace_id(job: ResearchJob, headline: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", headline.lower()).strip("-")[:48]
     suffix = job.id.removeprefix("research-")[-4:]
     return f"{date}-{slug or 'research-brief'}-{suffix}"
+
+
+def _persist_html_attempt(
+    workspace,
+    attempt: int,
+    *,
+    status: str,
+    error: BaseException | None = None,
+    api: HfApi | None = None,
+) -> None:
+    payload = {
+        "schema_version": 1,
+        "attempt": attempt,
+        "status": status,
+        "recorded_at": datetime.now(UTC).isoformat(),
+        "error_type": type(error).__name__ if error else None,
+        "error": _safe_error_message(error) if error else None,
+    }
+    (api or HfApi()).batch_bucket_files(
+        workspace.bucket_id,
+        add=[
+            (
+                json.dumps(payload, indent=2).encode(),
+                (
+                    f"{workspace.session_id}/scratch/presentation/"
+                    f"attempts/{attempt}/attempt.json"
+                ),
+            )
+        ],
+        token=workspace.bearer_token,
+    )
+
+
+def _safe_error_message(error: BaseException) -> str:
+    detail = str(error)
+    patterns = (
+        (r"(?i)(x-api-key\s*[:=]\s*)\S+", r"\1<redacted>"),
+        (r"(?i)(authorization\s*[:=]\s*bearer\s+)\S+", r"\1<redacted>"),
+        (r"(?i)(bearer\s+)\S+", r"\1<redacted>"),
+        (r"\bhf_[A-Za-z0-9]{8,}\b", "<redacted-hf-token>"),
+        (r"(://)[^/@\s]+@", r"\1<redacted>@"),
+        (
+            r"(?i)([?&](?:access_token|id_token|token|code|state|sig|signature|"
+            r"api_key|password|secret|client_secret|x-amz-credential|"
+            r"x-amz-security-token|x-amz-signature)=)[^&#\s]+",
+            r"\1<redacted>",
+        ),
+        (
+            r'(?i)(["\']?(?:access_token|id_token|token|api_key|password|secret|'
+            r'client_secret)["\']?\s*[:=]\s*)'
+            r'["\']?[^"\'\s,;}]+',
+            r"\1<redacted>",
+        ),
+    )
+    for pattern, replacement in patterns:
+        detail = re.sub(pattern, replacement, detail)
+    return detail[:4000]

@@ -10,6 +10,7 @@ import pytest
 from fast_agent import AgentAuth
 from research.app_jobs import ResearchJob
 from research.artifact_contract import (
+    embed_declared_figures,
     safe_artifact_path,
     validate_stage_manifest,
     verify_research_handoff,
@@ -17,8 +18,10 @@ from research.artifact_contract import (
 
 
 class ResearchHandoffSimulator:
-    def __init__(self, manifest: dict[str, Any]) -> None:
+    def __init__(self, manifest: dict[str, Any], report: str = "# Report\n") -> None:
         self.manifest = manifest
+        self.report = report
+        self.uploaded: bytes | None = None
 
     def whoami(self, *, token: str) -> dict[str, str]:
         return {"name": "alice"}
@@ -29,9 +32,16 @@ class ResearchHandoffSimulator:
         files: list[tuple[str, Path]],
         **kwargs: Any,
     ) -> None:
-        remote, local = files[0]
-        assert remote.endswith("/scratch/research/manifest.json")
-        local.write_text(json.dumps(self.manifest))
+        for remote, local in files:
+            if remote.endswith("/scratch/research/manifest.json"):
+                local.write_text(json.dumps(self.manifest))
+            elif remote.endswith("/output/report.md"):
+                local.write_text(self.report)
+            else:
+                raise AssertionError(remote)
+
+    def batch_bucket_files(self, bucket_id: str, *, add, **kwargs: Any) -> None:
+        self.uploaded = add[0][0]
 
     def list_bucket_tree(self, *args: Any, **kwargs: Any) -> list[SimpleNamespace]:
         return [
@@ -96,3 +106,52 @@ def test_research_manifest_cannot_escape_its_artifact_boundary() -> None:
 def test_artifact_paths_must_be_workspace_relative(path: str) -> None:
     with pytest.raises(ValueError, match="workspace-relative"):
         safe_artifact_path(path)
+
+
+def test_declared_figures_are_embedded_when_researcher_omits_them() -> None:
+    manifest = {
+        "artifacts": [
+            {
+                "path": "scratch/research/model-architecture.png",
+                "media_type": "image/png",
+                "role": "figure",
+            }
+        ]
+    }
+
+    report = embed_declared_figures(
+        "# Report\n\nThe model architecture is discussed below.\n",
+        manifest,
+        bucket_id="alice/research-agent",
+        workspace="research-123",
+    )
+
+    assert "![Model Architecture]" in report
+    assert (
+        "https://huggingface.co/buckets/alice/research-agent/resolve/"
+        "research-123/scratch/research/model-architecture.png"
+    ) in report
+    assert embed_declared_figures(
+        report,
+        manifest,
+        bucket_id="alice/research-agent",
+        workspace="research-123",
+    ) == report
+
+
+def test_unsupported_declared_figure_is_rejected() -> None:
+    with pytest.raises(ValueError, match="PNG, JPEG, or WebP"):
+        embed_declared_figures(
+            "# Report\n",
+            {
+                "artifacts": [
+                    {
+                        "path": "scratch/research/diagram.svg",
+                        "media_type": "image/svg+xml",
+                        "role": "figure",
+                    }
+                ]
+            },
+            bucket_id="alice/research-agent",
+            workspace="research-123",
+        )

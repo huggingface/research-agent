@@ -64,6 +64,13 @@ def test_researcher_excludes_oauth_diagnostics(built_deployments: Path) -> None:
     assert not (deployment / "research" / "auth_diagnostics.py").exists()
 
 
+def test_archive_pins_server_side_math_renderer(
+    built_deployments: Path,
+) -> None:
+    dockerfile = (built_deployments / "research-archive" / "Dockerfile").read_text()
+    assert "latex2mathml==3.81.0" in dockerfile
+
+
 def test_deployment_sources_are_staged_from_canonical_sources(
     built_deployments: Path,
 ) -> None:

@@ -50,6 +50,11 @@ Declare every persisted working artifact with a workspace-relative `path`,
 `output/report.md`. Do not claim completion until the manifest and every
 declared artifact can be read from the bucket.
 
+Every artifact declared with `"role": "figure"` must also appear in
+`output/report.md` using Markdown image syntax. Prefer report-local images under
+`output/assets/` and reference them as `![Description](assets/name.png)`.
+Do not merely mention a figure filename in prose.
+
 You can install data processing and visualization libraries in Sandboxes, so use tools like Matplotlib and similar to improve
 presentation
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,8 @@ from research.app_jobs import ResearchJob
 from research.research_runner import (
     ResearchRunner,
     _clean_headline,
+    _persist_html_attempt,
+    _safe_error_message,
     _workspace_id,
 )
 
@@ -73,6 +76,41 @@ class FailingAfterMarkdownRunner(ResearchRunner):
     async def invoke(self, job: ResearchJob, auth: None) -> str:
         job.markdown_report = "# Completed findings"
         raise RuntimeError("presentation handoff rejected a chart")
+
+
+class FinalizationDiagnosticRunner(RetryingReportRunner):
+    def __init__(self, home: Path) -> None:
+        super().__init__(home, failures=2)
+        self.statuses: list[str] = []
+
+    async def _invoke_html_agent(
+        self,
+        job: ResearchJob,
+        auth: AgentAuth,
+        attempt: int,
+    ):
+        self.invocations += 1
+        return object()
+
+    async def _record_html_attempt(
+        self,
+        job,
+        workspace,
+        attempt,
+        *,
+        status,
+        error=None,
+    ) -> None:
+        self.statuses.append(status)
+
+
+class CancelledFinalizationRunner(FinalizationDiagnosticRunner):
+    async def _finalize_html(
+        self,
+        job: ResearchJob,
+        auth: AgentAuth,
+    ) -> tuple[str, str]:
+        raise asyncio.CancelledError
 
 
 class HeadlineResponse:
@@ -186,6 +224,32 @@ async def test_html_report_stage_fails_after_two_attempts(tmp_path: Path) -> Non
     assert job.birch_finalize_attempts == 2
 
 
+@pytest.mark.asyncio
+async def test_finalization_failures_update_durable_attempt_status(
+    tmp_path: Path,
+) -> None:
+    runner = FinalizationDiagnosticRunner(tmp_path)
+    job = ResearchJob(id="research-test", topic="topic", owner_id="alice")
+
+    with pytest.raises(RuntimeError):
+        await runner.build_html_report(job, AgentAuth.bearer("token"))
+
+    assert runner.statuses == ["finalization-failed", "finalization-failed"]
+
+
+@pytest.mark.asyncio
+async def test_finalization_cancellation_updates_durable_attempt_status(
+    tmp_path: Path,
+) -> None:
+    runner = CancelledFinalizationRunner(tmp_path)
+    job = ResearchJob(id="research-test", topic="topic", owner_id="alice")
+
+    with pytest.raises(asyncio.CancelledError):
+        await runner.build_html_report(job, AgentAuth.bearer("token"))
+
+    assert runner.statuses == ["finalization-cancelled"]
+
+
 def test_headline_and_workspace_id_are_short_and_readable() -> None:
     job = ResearchJob(
         id="research-a7d1c5d57ef1",
@@ -205,6 +269,68 @@ def test_invalid_headline_falls_back_without_query_details() -> None:
     assert _clean_headline("one two three four five six seven") == (
         "Focused Research Brief"
     )
+
+
+def test_html_attempt_diagnostic_is_persisted_without_credentials() -> None:
+    class BucketSimulator:
+        uploaded: bytes | None = None
+        path: str | None = None
+
+        def batch_bucket_files(self, bucket_id, *, add, token):
+            assert bucket_id == "alice/research-agent"
+            assert token == "secret-token"
+            self.uploaded, self.path = add[0]
+
+    api = BucketSimulator()
+    workspace = type(
+        "Workspace",
+        (),
+        {
+            "bucket_id": "alice/research-agent",
+            "session_id": "research-123",
+            "bearer_token": "secret-token",
+        },
+    )()
+
+    _persist_html_attempt(
+        workspace,
+        2,
+        status="failed",
+        error=RuntimeError(
+            "sandbox startup failed Authorization: Bearer secret-token "
+            "with hf_1234567890"
+        ),
+        api=api,  # type: ignore[arg-type]
+    )
+
+    assert api.path == (
+        "research-123/scratch/presentation/attempts/2/attempt.json"
+    )
+    assert api.uploaded is not None
+    payload = json.loads(api.uploaded)
+    assert payload["status"] == "failed"
+    assert payload["error_type"] == "RuntimeError"
+    assert payload["error"] == (
+        "sandbox startup failed Authorization: Bearer <redacted> "
+        "with <redacted-hf-token>"
+    )
+    assert "secret-token" not in api.uploaded.decode()
+
+
+def test_error_messages_redact_sensitive_query_parameters() -> None:
+    detail = _safe_error_message(
+        RuntimeError(
+            "GET https://example.test/callback?code=secret&state=private "
+            'token="another-secret" api_key=key-value '
+            "https://user:password@example.test/"
+        )
+    )
+
+    assert "secret" not in detail
+    assert "private" not in detail
+    assert "another-secret" not in detail
+    assert "key-value" not in detail
+    assert "user:password" not in detail
 
 
 @pytest.mark.asyncio
