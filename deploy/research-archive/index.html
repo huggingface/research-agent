@@ -379,6 +379,8 @@
       selected: null,
       detail: null,
       details: new Map(),
+      inventories: new Map(),
+      inventoryRequests: new Map(),
       tab: "markdown",
       query: "",
       readOnly: false,
@@ -417,7 +419,7 @@
         <button class="run ${run.id === state.selected ? "active" : ""}" data-run="${escapeHtml(run.id)}">
           <div class="run-top"><span class="run-date">${escapeHtml(run.date)}</span><span class="status-dot ${run.status}"></span></div>
           <div class="run-title">${escapeHtml(run.title)}</div>
-          <div class="run-meta">${run.asset_count} assets · ${run.trace_count} traces</div>
+          ${run.asset_count === null || run.trace_count === null ? "" : `<div class="run-meta">${run.asset_count} assets · ${run.trace_count} traces</div>`}
         </button>`).join("") : `<div class="empty">No matching research folders.</div>`;
       document.querySelectorAll("[data-run]").forEach(button => button.addEventListener("click", () => selectRun(button.dataset.run)));
     }
@@ -528,6 +530,8 @@
         }
         state.runs = state.runs.filter(item => item.id !== run.id);
         state.details.delete(run.id);
+        state.inventories.delete(run.id);
+        state.inventoryRequests.delete(run.id);
         state.selected = state.runs[0]?.id ?? null;
         state.detail = null;
         history.replaceState(null, "", state.selected ? `#${encodeURIComponent(state.selected)}` : location.pathname);
@@ -552,8 +556,36 @@
       } else if (state.tab === "html") {
         $("panel").innerHTML = run.html_url ? `<iframe class="report-frame" src="${run.html_url}" title="${escapeHtml(run.title)}" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>` : `<div class="empty">No HTML report was produced.</div>`;
       } else {
-        $("panel").innerHTML = `<div class="file-list">${run.files.map(file => `
-          <div class="file"><span class="file-kind">${escapeHtml(file.kind)}</span><a href="/files/${encodeURIComponent(run.id)}/${file.path.split("/").map(encodeURIComponent).join("/")}" target="_blank" rel="noopener noreferrer">${escapeHtml(file.path)}</a><span class="file-size">${formatBytes(file.size)}</span></div>`).join("")}</div>`;
+        const files = state.inventories.get(run.id);
+        if (!files) {
+          $("panel").innerHTML = `<div class="empty loading">Loading files…</div>`;
+          loadFiles(run.id);
+          return;
+        }
+        $("panel").innerHTML = files.length ? `<div class="file-list">${files.map(file => `
+          <div class="file"><span class="file-kind">${escapeHtml(file.kind)}</span><a href="/files/${encodeURIComponent(run.id)}/${file.path.split("/").map(encodeURIComponent).join("/")}" target="_blank" rel="noopener noreferrer">${escapeHtml(file.path)}</a><span class="file-size">${formatBytes(file.size)}</span></div>`).join("")}</div>`
+          : `<div class="empty">No files were produced.</div>`;
+      }
+    }
+
+    async function loadFiles(id) {
+      if (state.inventories.has(id) || state.inventoryRequests.has(id)) return;
+      const request = fetch(`/api/runs/${encodeURIComponent(id)}/files`)
+        .then(response => {
+          if (!response.ok) throw new Error("Could not load files.");
+          return response.json();
+        })
+        .then(data => state.inventories.set(id, data.files))
+        .catch(error => {
+          if (state.selected === id && state.tab === "files") {
+            $("panel").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+          }
+        })
+        .finally(() => state.inventoryRequests.delete(id));
+      state.inventoryRequests.set(id, request);
+      await request;
+      if (state.selected === id && state.tab === "files" && state.inventories.has(id)) {
+        renderPanel();
       }
     }
 

@@ -89,8 +89,8 @@ class RunSummary:
     status: str
     has_markdown: bool
     has_html: bool
-    asset_count: int
-    trace_count: int
+    asset_count: int | None
+    trace_count: int | None
 
     def json(self) -> dict[str, Any]:
         return {
@@ -128,10 +128,10 @@ class ResearchArchive:
         return sorted(runs, key=lambda run: run.updated_at, reverse=True)
 
     def summarize(self, run: Path) -> RunSummary:
-        markdown_path = run / "output" / "report.md"
-        html_path = run / "output" / "report.html"
-        has_markdown = markdown_path.is_file()
-        has_html = html_path.is_file()
+        markdown_path = self._direct_file(run, run / "output" / "report.md")
+        html_path = self._direct_file(run, run / "output" / "report.html")
+        has_markdown = markdown_path is not None
+        has_html = html_path is not None
         status = (
             "complete"
             if has_markdown and has_html
@@ -139,8 +139,7 @@ class ResearchArchive:
             if has_markdown
             else "incomplete"
         )
-        files = [path for path in run.rglob("*") if path.is_file()]
-        updated = self._workspace_timestamp(run, files)
+        updated = self._workspace_timestamp(run, markdown_path, html_path)
         return RunSummary(
             id=run.name,
             title=self._title(run.name, markdown_path),
@@ -149,8 +148,8 @@ class ResearchArchive:
             status=status,
             has_markdown=has_markdown,
             has_html=has_html,
-            asset_count=sum("/assets/" in path.as_posix() for path in files),
-            trace_count=sum("/traces/" in path.as_posix() for path in files),
+            asset_count=None,
+            trace_count=None,
         )
 
     def describe(self, run_id: str) -> dict[str, Any]:
@@ -158,27 +157,17 @@ class ResearchArchive:
         if run.is_symlink() or not run.is_dir():
             raise FileNotFoundError(run_id)
         summary = self.summarize(run)
-        markdown_path = run / "output" / "report.md"
-        markdown_text = (
-            markdown_path.read_text(errors="replace") if markdown_path.is_file() else ""
-        )
+        markdown_path = self._direct_file(run, run / "output" / "report.md")
+        markdown_text = markdown_path.read_text(errors="replace") if markdown_path else ""
         research_manifest = self._read_json(
-            run / "scratch" / "research" / "manifest.json"
+            run,
+            run / "scratch" / "research" / "manifest.json",
         )
         presentation_manifests = [
-            self._read_json(path)
+            self._read_json(run, path)
             for path in sorted(
                 (run / "scratch" / "presentation" / "attempts").glob("*/manifest.json")
             )
-        ]
-        files = [
-            {
-                "path": path.relative_to(run).as_posix(),
-                "size": path.stat().st_size,
-                "kind": self._kind(path),
-            }
-            for path in sorted(run.rglob("*"))
-            if path.is_file() and path.name not in {".keep", ".workspace.json"}
         ]
         return {
             **summary.json(),
@@ -190,7 +179,6 @@ class ResearchArchive:
             ),
             "research_manifest": research_manifest,
             "presentation_manifests": presentation_manifests,
-            "files": files,
             "markdown_url": (
                 f"/files/{run_id}/output/report.md" if summary.has_markdown else None
             ),
@@ -198,6 +186,35 @@ class ResearchArchive:
                 f"/files/{run_id}/output/report.html" if summary.has_html else None
             ),
         }
+
+    def files(self, run_id: str) -> list[dict[str, str | int]]:
+        run = self.run_path(run_id)
+        if run.is_symlink() or not run.is_dir():
+            raise FileNotFoundError(run_id)
+        resolved_run = run.resolve()
+        files: list[dict[str, str | int]] = []
+        for path in sorted(run.rglob("*")):
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or path.name in {".keep", ".workspace.json"}
+            ):
+                continue
+            try:
+                resolved = path.resolve()
+                if not resolved.is_relative_to(resolved_run):
+                    continue
+                size = path.stat().st_size
+            except OSError:
+                continue
+            files.append(
+                {
+                    "path": path.relative_to(run).as_posix(),
+                    "size": size,
+                    "kind": self._kind(path),
+                }
+            )
+        return files
 
     def run_path(self, run_id: str) -> Path:
         if not SAFE_SEGMENT.fullmatch(run_id):
@@ -229,9 +246,27 @@ class ResearchArchive:
             raise FileNotFoundError(run_id)
         shutil.rmtree(run)
 
-    @staticmethod
-    def _read_json(path: Path) -> object | None:
-        if not path.is_file():
+    @classmethod
+    def _direct_file(cls, run: Path, path: Path) -> Path | None:
+        try:
+            relative = path.relative_to(run)
+            current = run
+            for part in relative.parts:
+                current /= part
+                if current.is_symlink():
+                    return None
+            resolved_run = run.resolve()
+            resolved = path.resolve(strict=True)
+        except (OSError, ValueError):
+            return None
+        if not resolved.is_relative_to(resolved_run) or not resolved.is_file():
+            return None
+        return resolved
+
+    @classmethod
+    def _read_json(cls, run: Path, path: Path) -> object | None:
+        path = cls._direct_file(run, path)
+        if path is None:
             return None
         try:
             return json.loads(path.read_text())
@@ -239,8 +274,13 @@ class ResearchArchive:
             return None
 
     @classmethod
-    def _workspace_timestamp(cls, run: Path, files: list[Path]) -> float:
-        marker = cls._read_json(run / "scratch" / ".workspace.json")
+    def _workspace_timestamp(
+        cls,
+        run: Path,
+        markdown_path: Path | None,
+        html_path: Path | None,
+    ) -> float:
+        marker = cls._read_json(run, run / "scratch" / ".workspace.json")
         if isinstance(marker, dict):
             checked_at = marker.get("checked_at")
             if isinstance(checked_at, str):
@@ -248,15 +288,15 @@ class ResearchArchive:
                     return datetime.fromisoformat(checked_at).timestamp()
                 except ValueError:
                     pass
-        return max(
-            (path.stat().st_mtime for path in files),
-            default=run.stat().st_mtime,
-        )
+        # Legacy runs without markers are ordered by direct report metadata.
+        candidates = [run, *(path for path in (markdown_path, html_path) if path)]
+        return max(path.stat().st_mtime for path in candidates)
 
     @staticmethod
-    def _title(run_id: str, report: Path) -> str:
-        if report.is_file():
-            match = HEADING.search(report.read_text(errors="replace")[:8000])
+    def _title(run_id: str, report: Path | None) -> str:
+        if report:
+            with report.open(errors="replace") as handle:
+                match = HEADING.search(handle.read(8000))
             if match:
                 return match.group(1).strip()
         match = DATE_PREFIX.match(run_id)
@@ -482,6 +522,14 @@ def create_app(
             return archive.describe(run_id)
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=404, detail="Run not found") from exc
+
+    @app.get("/api/runs/{run_id}/files")
+    def run_files(run_id: str) -> dict[str, object]:
+        try:
+            files = archive.files(run_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="Run not found") from exc
+        return {"files": files, "count": len(files)}
 
     @app.delete("/api/runs/{run_id}")
     def delete_run(run_id: str) -> dict[str, str]:

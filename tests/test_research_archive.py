@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -40,11 +42,15 @@ def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
     archive = module.ResearchArchive(tmp_path)
     summaries = archive.list_runs()
     detail = archive.describe(run.name)
+    files = archive.files(run.name)
 
+    assert "rglob" not in module.ResearchArchive.summarize.__code__.co_names
     assert len(summaries) == 1
     assert summaries[0].status == "complete"
     assert summaries[0].title == "Client Success Rates"
     assert summaries[0].updated_at == "2026-07-22T12:30:00+00:00"
+    assert summaries[0].asset_count is None
+    assert summaries[0].trace_count is None
     assert detail["has_markdown"]
     assert detail["has_html"]
     assert detail["markdown"] == (
@@ -52,7 +58,13 @@ def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
     )
     assert detail["research_manifest"] == {"stage": "research"}
     assert 'href="https://huggingface.co/"' in detail["markdown_html"]
-    assert any(file["path"] == "output/assets/chart.svg" for file in detail["files"])
+    assert "files" not in detail
+    assert any(file["path"] == "output/assets/chart.svg" for file in files)
+
+    client = TestClient(module.create_app(tmp_path))
+    response = client.get(f"/api/runs/{run.name}/files")
+    assert response.status_code == 200
+    assert response.json()["count"] == len(files)
 
 
 def test_archive_renders_same_run_markdown_images(tmp_path: Path) -> None:
@@ -128,6 +140,7 @@ def test_archive_rejects_symlinked_runs_and_assets(tmp_path: Path) -> None:
     assert not archive.list_runs()
     for operation in (
         lambda: archive.describe(run_id),
+        lambda: archive.files(run_id),
         lambda: archive.file_path(run_id, "secret.png"),
     ):
         try:
@@ -146,6 +159,51 @@ def test_archive_rejects_symlinked_runs_and_assets(tmp_path: Path) -> None:
         pass
     else:
         raise AssertionError("symlinked artifact was accepted")
+    assert archive.files(safe_run.name) == []
+
+
+def test_archive_rejects_symlinked_canonical_files(tmp_path: Path) -> None:
+    module = load_archive_module()
+    outside = tmp_path / "_outside"
+    outside.mkdir()
+    secret = outside / "secret.md"
+    secret.write_text("# Secret\n\nDo not disclose")
+    manifest = outside / "manifest.json"
+    manifest.write_text('{"secret": true}')
+    run = tmp_path / "26-07-30-safe-a123"
+    (run / "output").mkdir(parents=True)
+    (run / "scratch" / "research").mkdir(parents=True)
+    (run / "output" / "report.md").symlink_to(secret)
+    (run / "scratch" / "research" / "manifest.json").symlink_to(manifest)
+    archive = module.ResearchArchive(tmp_path)
+
+    summary = archive.list_runs()[0]
+    detail = archive.describe(run.name)
+
+    assert summary.has_markdown is False
+    assert summary.title == "Safe"
+    assert detail["markdown"] == ""
+    assert detail["research_manifest"] is None
+    assert archive.files(run.name) == []
+
+
+def test_markerless_run_uses_direct_report_timestamp(tmp_path: Path) -> None:
+    module = load_archive_module()
+    run = tmp_path / "legacy-run"
+    report = run / "output" / "report.md"
+    artifact = run / "scratch" / "research" / "later.txt"
+    report.parent.mkdir(parents=True)
+    artifact.parent.mkdir(parents=True)
+    report.write_text("# Legacy")
+    artifact.write_text("later")
+    report_time = datetime(2026, 7, 20, 12, tzinfo=UTC).timestamp()
+    os.utime(run, (report_time - 10, report_time - 10))
+    os.utime(report, (report_time, report_time))
+    os.utime(artifact, (report_time + 100, report_time + 100))
+
+    summary = module.ResearchArchive(tmp_path).list_runs()[0]
+
+    assert summary.updated_at == "2026-07-20T12:00:00+00:00"
 
 
 def test_archive_deletes_only_a_valid_run(tmp_path: Path) -> None:
@@ -278,8 +336,10 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert "Open full report" not in page.text
     assert 'target="_blank" rel="noopener noreferrer"' in page.text
     assert "details: new Map()" in page.text
+    assert "inventories: new Map()" in page.text
     assert "state.details.get(id)" in page.text
+    assert 'fetch(`/api/runs/${encodeURIComponent(id)}/files`)' in page.text
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/svg+xml")
-    assert client.get("/health").json()["template_version"] == "1.2.5"
+    assert client.get("/health").json()["template_version"] == "1.2.6"
     assert module.TEMPLATE_MARKER["template_version"] == ARCHIVE_TEMPLATE_VERSION
