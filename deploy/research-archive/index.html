@@ -378,7 +378,8 @@
       runs: [],
       selected: null,
       detail: null,
-      details: new Map(),
+      markdowns: new Map(),
+      markdownRequests: new Map(),
       inventories: new Map(),
       inventoryRequests: new Map(),
       tab: "markdown",
@@ -388,6 +389,7 @@
     const $ = (id) => document.getElementById(id);
     const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const formatBytes = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n/1024).toFixed(1)} KB` : `${(n/1048576).toFixed(1)} MB`;
+    const fileUrl = (id, path) => `/files/${encodeURIComponent(id)}/${path.split("/").map(encodeURIComponent).join("/")}`;
 
     async function loadRuns() {
       const [runsResponse, configResponse] = await Promise.all([
@@ -424,25 +426,17 @@
       document.querySelectorAll("[data-run]").forEach(button => button.addEventListener("click", () => selectRun(button.dataset.run)));
     }
 
-    async function selectRun(id, push = true) {
+    function selectRun(id, push = true) {
+      const summary = state.runs.find(run => run.id === id);
+      if (!summary) return;
       state.selected = id;
-      state.detail = null;
+      state.detail = {
+        ...summary,
+        html_url: summary.has_html ? fileUrl(id, "output/report.html") : null,
+      };
       if (push) location.hash = encodeURIComponent(id);
+      state.tab = summary.has_html ? "html" : summary.has_markdown ? "markdown" : "files";
       renderRuns();
-      const cached = state.details.get(id);
-      if (cached) {
-        state.detail = cached;
-        state.tab = cached.has_html ? "html" : cached.has_markdown ? "markdown" : "files";
-        renderDetail();
-        return;
-      }
-      $("detail").innerHTML = `<div class="empty loading">Loading research folder…</div>`;
-      const response = await fetch(`/api/runs/${encodeURIComponent(id)}`);
-      const detail = await response.json();
-      state.details.set(id, detail);
-      if (state.selected !== id) return;
-      state.detail = detail;
-      state.tab = state.detail.has_html ? "html" : state.detail.has_markdown ? "markdown" : "files";
       renderDetail();
     }
 
@@ -458,7 +452,7 @@
           </div>
           <div class="tabs">${tabs.map(tab => `<button class="tab ${tab === state.tab ? "active" : ""}" data-tab="${tab}">${tab}</button>`).join("")}</div>
           <div class="toolbar-actions">
-            ${run.has_markdown ? `<button class="toolbar-action" type="button" data-copy-markdown>Copy Markdown</button>` : ""}
+            ${state.markdowns.has(run.id) ? `<button class="toolbar-action" type="button" data-copy-markdown>Copy Markdown</button>` : ""}
             ${run.has_html ? `<a class="toolbar-action" href="${run.html_url}" target="_blank" rel="noopener">Open in new window ↗</a><a class="toolbar-action" href="${run.html_url}?download=true">Download ↓</a>` : ""}
           </div>
           ${state.readOnly ? "" : `<button class="delete-button" type="button" data-delete title="Delete report" aria-label="Delete ${escapeHtml(run.title)}">
@@ -480,14 +474,14 @@
         let copied = false;
         if (navigator.clipboard?.writeText) {
           try {
-            await navigator.clipboard.writeText(state.detail.markdown);
+            await navigator.clipboard.writeText(state.markdowns.get(state.detail.id).markdown);
             copied = true;
           } catch {}
         }
         if (!copied) {
           const textarea = document.createElement("textarea");
           try {
-            textarea.value = state.detail.markdown;
+            textarea.value = state.markdowns.get(state.detail.id).markdown;
             textarea.style.position = "fixed";
             textarea.style.opacity = "0";
             document.body.appendChild(textarea);
@@ -529,7 +523,8 @@
           throw new Error(body.detail || "Could not delete this report.");
         }
         state.runs = state.runs.filter(item => item.id !== run.id);
-        state.details.delete(run.id);
+        state.markdowns.delete(run.id);
+        state.markdownRequests.delete(run.id);
         state.inventories.delete(run.id);
         state.inventoryRequests.delete(run.id);
         state.selected = state.runs[0]?.id ?? null;
@@ -552,7 +547,13 @@
       const run = state.detail;
       $("panel").classList.toggle("html-panel", state.tab === "html");
       if (state.tab === "markdown") {
-        $("panel").innerHTML = run.markdown_html ? `<article class="markdown">${run.markdown_html}</article>` : `<div class="empty">No Markdown report was produced.</div>`;
+        const markdown = state.markdowns.get(run.id);
+        if (!markdown) {
+          $("panel").innerHTML = `<div class="empty loading">Loading Markdown…</div>`;
+          loadMarkdown(run.id);
+          return;
+        }
+        $("panel").innerHTML = markdown.markdown_html ? `<article class="markdown">${markdown.markdown_html}</article>` : `<div class="empty">No Markdown report was produced.</div>`;
       } else if (state.tab === "html") {
         $("panel").innerHTML = run.html_url ? `<iframe class="report-frame" src="${run.html_url}" title="${escapeHtml(run.title)}" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>` : `<div class="empty">No HTML report was produced.</div>`;
       } else {
@@ -563,8 +564,29 @@
           return;
         }
         $("panel").innerHTML = files.length ? `<div class="file-list">${files.map(file => `
-          <div class="file"><span class="file-kind">${escapeHtml(file.kind)}</span><a href="/files/${encodeURIComponent(run.id)}/${file.path.split("/").map(encodeURIComponent).join("/")}" target="_blank" rel="noopener noreferrer">${escapeHtml(file.path)}</a><span class="file-size">${formatBytes(file.size)}</span></div>`).join("")}</div>`
+          <div class="file"><span class="file-kind">${escapeHtml(file.kind)}</span><a href="${fileUrl(run.id, file.path)}" target="_blank" rel="noopener noreferrer">${escapeHtml(file.path)}</a><span class="file-size">${formatBytes(file.size)}</span></div>`).join("")}</div>`
           : `<div class="empty">No files were produced.</div>`;
+      }
+    }
+
+    async function loadMarkdown(id) {
+      if (state.markdowns.has(id) || state.markdownRequests.has(id)) return;
+      const request = fetch(`/api/runs/${encodeURIComponent(id)}/markdown`)
+        .then(response => {
+          if (!response.ok) throw new Error("Could not load Markdown.");
+          return response.json();
+        })
+        .then(data => state.markdowns.set(id, data))
+        .catch(error => {
+          if (state.selected === id && state.tab === "markdown") {
+            $("panel").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+          }
+        })
+        .finally(() => state.markdownRequests.delete(id));
+      state.markdownRequests.set(id, request);
+      await request;
+      if (state.selected === id && state.tab === "markdown" && state.markdowns.has(id)) {
+        renderDetail();
       }
     }
 

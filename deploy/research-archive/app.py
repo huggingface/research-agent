@@ -157,8 +157,11 @@ class ResearchArchive:
         if run.is_symlink() or not run.is_dir():
             raise FileNotFoundError(run_id)
         summary = self.summarize(run)
-        markdown_path = self._direct_file(run, run / "output" / "report.md")
-        markdown_text = markdown_path.read_text(errors="replace") if markdown_path else ""
+        markdown_detail = (
+            self.markdown(run_id)
+            if summary.has_markdown
+            else {"markdown": "", "markdown_html": ""}
+        )
         research_manifest = self._read_json(
             run,
             run / "scratch" / "research" / "manifest.json",
@@ -171,12 +174,7 @@ class ResearchArchive:
         ]
         return {
             **summary.json(),
-            "markdown": markdown_text,
-            "markdown_html": render_markdown(
-                markdown_text,
-                run_id=run_id,
-                archive=self,
-            ),
+            **markdown_detail,
             "research_manifest": research_manifest,
             "presentation_manifests": presentation_manifests,
             "markdown_url": (
@@ -185,6 +183,19 @@ class ResearchArchive:
             "html_url": (
                 f"/files/{run_id}/output/report.html" if summary.has_html else None
             ),
+        }
+
+    def markdown(self, run_id: str) -> dict[str, str]:
+        run = self.run_path(run_id)
+        if run.is_symlink() or not run.is_dir():
+            raise FileNotFoundError(run_id)
+        path = self._direct_file(run, run / "output" / "report.md")
+        if path is None:
+            raise FileNotFoundError("output/report.md")
+        text = path.read_text(errors="replace")
+        return {
+            "markdown": text,
+            "markdown_html": render_markdown(text, run_id=run_id, archive=self),
         }
 
     def files(self, run_id: str) -> list[dict[str, str | int]]:
@@ -530,6 +541,13 @@ def create_app(
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=404, detail="Run not found") from exc
         return {"files": files, "count": len(files)}
+
+    @app.get("/api/runs/{run_id}/markdown")
+    def run_markdown(run_id: str) -> dict[str, str]:
+        try:
+            return archive.markdown(run_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="Markdown not found") from exc
 
     @app.delete("/api/runs/{run_id}")
     def delete_run(run_id: str) -> dict[str, str]:

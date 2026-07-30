@@ -65,6 +65,9 @@ def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
     response = client.get(f"/api/runs/{run.name}/files")
     assert response.status_code == 200
     assert response.json()["count"] == len(files)
+    markdown = client.get(f"/api/runs/{run.name}/markdown")
+    assert markdown.status_code == 200
+    assert markdown.json()["markdown"] == detail["markdown"]
 
 
 def test_archive_renders_same_run_markdown_images(tmp_path: Path) -> None:
@@ -329,17 +332,18 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert "<h2>${escapeHtml(run.title)}</h2>" not in page.text
     assert 'class="detail-toolbar"' in page.text
     assert "html-panel" in page.text
-    assert 'state.detail.has_html ? "html"' in page.text
+    assert 'summary.has_html ? "html"' in page.text
     assert "Copy Markdown" in page.text
     assert "navigator.clipboard" in page.text
     assert "Open in new window ↗" in page.text
     assert "Open full report" not in page.text
     assert 'target="_blank" rel="noopener noreferrer"' in page.text
-    assert "details: new Map()" in page.text
+    assert "markdowns: new Map()" in page.text
     assert "inventories: new Map()" in page.text
-    assert "state.details.get(id)" in page.text
+    assert 'fileUrl(id, "output/report.html")' in page.text
+    assert 'fetch(`/api/runs/${encodeURIComponent(id)}/markdown`)' in page.text
     assert 'fetch(`/api/runs/${encodeURIComponent(id)}/files`)' in page.text
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/svg+xml")
-    assert client.get("/health").json()["template_version"] == "1.2.6"
+    assert client.get("/health").json()["template_version"] == "1.2.7"
     assert module.TEMPLATE_MARKER["template_version"] == ARCHIVE_TEMPLATE_VERSION
