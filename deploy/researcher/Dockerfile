@@ -30,7 +30,6 @@ ENV HF_HUB_CACHE=/app/.cache/huggingface/hub
 ENV HF_XET_CACHE=/app/.cache/huggingface/xet
 ENV TMPDIR=/app/tmp
 ENV HF_TOKEN=hf_dummy_startup_token
-ENV RESEARCH_OAUTH_DIAGNOSTICS=1
 ENV PORT=7860
 ENV FASTMCP_HTTP_ALLOWED_HOSTS="[\"*\"]"
 ENV FASTMCP_HTTP_HOST_ORIGIN_PROTECTION=false

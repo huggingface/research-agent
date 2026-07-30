@@ -9,17 +9,17 @@ import re
 import sys
 from pathlib import Path
 
+from fast_agent import AgentAuth
 from huggingface_hub import HfApi, HfFileSystem, get_token
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from fast_agent import AgentAuth
-
-from research.app_artifacts import finalize_bucket_html
-from research.app_jobs import ResearchJob
-from research.birch_renderer import generate_birch_report
-from research.research_workspace import ResearchWorkspace
+# Direct execution needs the project root before local imports.
+from research.app_artifacts import finalize_bucket_html  # noqa: E402
+from research.app_jobs import ResearchJob  # noqa: E402
+from research.birch_renderer import generate_birch_report  # noqa: E402
+from research.research_workspace import ResearchWorkspace  # noqa: E402
 
 SAFE_WORKSPACE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 

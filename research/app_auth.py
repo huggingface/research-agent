@@ -18,9 +18,6 @@ from huggingface_hub import get_token
 from pydantic import AnyHttpUrl
 from starlette.middleware import Middleware
 
-from .auth_diagnostics import AuthDiagnosticsMiddleware
-
-
 def auth_provider() -> RemoteAuthProvider | None:
     provider, scopes, resource_url = get_oauth_config()
     if provider != "huggingface":
@@ -38,10 +35,7 @@ def http_middleware() -> list[Middleware] | None:
     provider = normalize_serve_oauth_provider(os.environ.get("FAST_AGENT_SERVE_OAUTH"))
     if provider != "huggingface":
         return None
-    return [
-        Middleware(AuthDiagnosticsMiddleware),
-        Middleware(cast(Any, HFAuthHeaderMiddleware)),
-    ]
+    return [Middleware(cast(Any, HFAuthHeaderMiddleware))]
 
 
 def request_auth() -> AgentAuth | None:
