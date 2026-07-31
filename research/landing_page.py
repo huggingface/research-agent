@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import html
 import os
+import re
 
 from fastmcp import FastMCP
 from starlette.requests import Request
-from starlette.responses import HTMLResponse
+from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .hf_design import HF_LOGO_DATA_URI
 
@@ -20,6 +22,64 @@ LANDING_PAGE_CSP = (
     "img-src data:; "
     "form-action 'none'"
 )
+QVALUE = re.compile(r"^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$")
+
+
+class McpBrowserRedirectMiddleware:
+    """Send browser GETs for the protocol endpoint to the connection guide."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if (
+            scope["type"] == "http"
+            and scope["method"] == "GET"
+            and scope["path"] == "/mcp"
+            and not _accepts_event_stream(scope)
+        ):
+            response = RedirectResponse(
+                "/",
+                status_code=303,
+                headers={
+                    "Cache-Control": "no-store",
+                    "Vary": "Accept",
+                },
+            )
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+def _accepts_event_stream(scope: Scope) -> bool:
+    values = [
+        value.decode("latin-1")
+        for key, value in scope.get("headers", [])
+        if key.decode("latin-1").lower() == "accept"
+    ]
+    for item in ",".join(values).split(","):
+        media_type, *parameters = (part.strip() for part in item.split(";"))
+        if media_type.lower() != "text/event-stream":
+            continue
+        quality = next(
+            (
+                value
+                for parameter in parameters
+                if parameter.lower().startswith("q=")
+                for value in (parameter.split("=", 1)[1].strip(),)
+            ),
+            "1",
+        )
+        if not QVALUE.fullmatch(quality):
+            continue
+        if float(quality) > 0:
+            return True
+    return False
 
 
 def register_landing_page(mcp: FastMCP) -> None:

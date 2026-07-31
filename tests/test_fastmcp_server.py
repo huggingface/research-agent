@@ -8,6 +8,7 @@ import pytest
 from fast_agent import AgentAuth
 from fastmcp import Client, FastMCP, FastMCPApp
 from starlette.requests import Request
+from starlette.responses import Response
 
 from research.app_auth import effective_agent_auth
 from research.app_jobs import ResearchJobStore
@@ -22,6 +23,7 @@ from research.fastmcp_server import (
 from research.hf_design import HF_RESOURCE_DOMAINS
 from research.landing_page import (
     LANDING_PAGE_CSP,
+    McpBrowserRedirectMiddleware,
     _connection_url,
     register_landing_page,
 )
@@ -84,6 +86,63 @@ async def test_public_landing_page_shows_request_specific_mcp_url() -> None:
     assert "script-src 'unsafe-inline'" in LANDING_PAGE_CSP
     assert landing.headers["content-security-policy"] == LANDING_PAGE_CSP
     assert any(getattr(route, "path", None) == "/mcp" for route in app.routes)
+
+
+@pytest.mark.asyncio
+async def test_browser_get_on_mcp_redirects_without_claiming_sse() -> None:
+    mcp = FastMCP("landing-test")
+    register_landing_page(mcp)
+    app = McpBrowserRedirectMiddleware(
+        mcp.http_app(path="/mcp", transport="http", stateless_http=True)
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="https://researcher.example",
+        follow_redirects=False,
+    ) as client:
+        browser = await client.get("/mcp", headers={"Accept": "text/html"})
+        query = await client.get("/mcp?source=browser")
+        sse = await client.get("/mcp", headers={"Accept": "text/event-stream"})
+
+    for response in (browser, query):
+        assert response.status_code == 303
+        assert response.headers["location"] == "/"
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["vary"] == "Accept"
+    assert sse.status_code == 405
+
+
+@pytest.mark.asyncio
+async def test_zero_quality_sse_accept_redirects_to_welcome_page() -> None:
+    async def downstream(scope, receive, send) -> None:
+        response = Response("protocol", status_code=418)
+        await response(scope, receive, send)
+
+    app = McpBrowserRedirectMiddleware(downstream)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="https://researcher.example",
+        follow_redirects=False,
+    ) as client:
+        rejected = await client.get(
+            "/mcp",
+            headers={"Accept": "application/json, text/event-stream;q=0"},
+        )
+        protocol = await client.get(
+            "/mcp",
+            headers={"Accept": "application/json, text/event-stream;q=0.9"},
+        )
+        invalid = await client.get(
+            "/mcp",
+            headers={"Accept": "text/event-stream;q=2"},
+        )
+        post = await client.post("/mcp")
+
+    assert rejected.status_code == 303
+    assert protocol.status_code == 418
+    assert invalid.status_code == 303
+    assert post.status_code == 418
 
 
 def test_landing_page_prefers_public_hugging_face_space_host() -> None:
