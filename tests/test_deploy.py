@@ -36,13 +36,21 @@ def test_researcher_pins_compatible_fast_agent_stack() -> None:
     dockerfile = (ROOT / "deploy/researcher/Dockerfile").read_text()
     config = (ROOT / "research/fast-agent.yaml").read_text()
 
-    assert "fast-agent-mcp==0.9.27" in dockerfile
-    assert "'fastmcp[apps]==3.4.4'" in dockerfile
-    assert "huggingface_hub==1.24.0" in dockerfile
+    assert "fast-agent-mcp==0.10.2" in dockerfile
+    assert "--prerelease=allow" in dockerfile
+    assert "fastmcp-slim" not in dockerfile
+    assert "fastmcp[apps]" not in dockerfile
+    assert "huggingface_hub" not in dockerfile
     assert "hf-xet==1.5.2" in dockerfile
     assert "RESEARCH_OAUTH_DIAGNOSTICS" not in dockerfile
     assert 'FASTMCP_HTTP_ALLOWED_HOSTS="[\\\"*\\\"]"' in dockerfile
     assert "llm_retries: 5" in config
+
+    legacy_dockerfile = (ROOT / "deploy/research-tool-one/Dockerfile").read_text()
+    assert "fast-agent-mcp==0.10.2" in legacy_dockerfile
+    assert "--prerelease=allow" in legacy_dockerfile
+    assert "fastmcp-slim" not in legacy_dockerfile
+    assert "huggingface_hub" not in legacy_dockerfile
 
 
 @pytest.fixture(scope="module")

@@ -6,6 +6,7 @@ import pytest
 
 from research.app_jobs import ResearchJob
 from research.birch_renderer import (
+    DEFAULT_BIRCH_FAST_AGENT_PACKAGE,
     SANDBOX_AGENT_CARD,
     _agent_sandbox_environment,
     _bucket_object_path,
@@ -91,6 +92,8 @@ def test_presentation_worker_is_stateless_and_uses_the_same_session_mount() -> N
     assert mount.mount_path == "/workspace"
     assert not mount.read_only
     assert sandbox._forward_hf_token
+    assert DEFAULT_BIRCH_FAST_AGENT_PACKAGE == "fast-agent-mcp==0.10.2"
+    assert "model: $system.html" in SANDBOX_AGENT_CARD
     assert "use_history: false" in SANDBOX_AGENT_CARD
     assert "/workspace/scratch/research/manifest.json" in SANDBOX_AGENT_CARD
     assert "You may generate charts" in SANDBOX_AGENT_CARD

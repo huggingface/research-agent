@@ -5,9 +5,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-RUN uv pip install --system --no-cache \
-    fast-agent-mcp==0.9.7 \
-    huggingface_hub \
+RUN uv pip install --prerelease=allow --system --no-cache \
+    fast-agent-mcp==0.10.2 \
     pillow
 
 COPY --link ./ /app

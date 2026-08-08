@@ -59,12 +59,12 @@ async def test_renderer_uri_is_content_addressed_and_readable() -> None:
 
     tool_digest = hash_tool("Hugging Face Researcher", "researcher")
     assert uri == (f"ui://prefab/tool/{tool_digest}/renderer-{digest}.html")
-    assert tool.outputSchema == PREFAB_OUTPUT_SCHEMA
+    assert tool.output_schema == PREFAB_OUTPUT_SCHEMA
     assert not any(key.startswith("openai/") for key in tool.meta)
     assert tool.meta["ui/resourceUri"] == uri
     assert result.structured_content is not None
     assert {"$prefab", "view", "state"} <= result.structured_content.keys()
-    assert contents[0].mimeType == "text/html;profile=mcp-app"
+    assert contents[0].mime_type == "text/html;profile=mcp-app"
     html = contents[0].text
     assert "@prefecthq/prefab-ui@0.20.2" in html
     assert "research-app-build" not in html

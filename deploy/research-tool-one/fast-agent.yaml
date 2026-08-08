@@ -1,4 +1,4 @@
-default_model: hf.moonshotai/Kimi-K2-Thinking
+default_model: hf.moonshotai/Kimi-K2-Thinking:featherless-ai
 
 logger:
   type: console

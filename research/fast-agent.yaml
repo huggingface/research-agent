@@ -1,4 +1,4 @@
-default_model: $system.default
+default_model: $system.research
 llm_retries: 5
 git_aware: true
 
@@ -9,9 +9,9 @@ logger:
 
 model_references:
   system:
-    fast: gpt-oss
-    research: glm52
-    html: kimi27
+    fast: hf.openai/gpt-oss-120b:cerebras
+    research: hf.zai-org/GLM-5.2:zai-org
+    html: hf.moonshotai/Kimi-K2.7-Code:novita?temperature=1.0&top_p=0.95&reasoning=on
 
 mcp:
   servers:

@@ -33,6 +33,7 @@ SKILL_ROOT = Path(__file__).parent / "skills" / "birch-html"
 SANDBOX_SKILL_ROOT = "/opt/birch"
 SANDBOX_WORKSPACE_ROOT = "/workspace"
 BIRCH_STYLE_MARKER = "__BIRCH_SYSTEM_CSS__"
+DEFAULT_BIRCH_FAST_AGENT_PACKAGE = "fast-agent-mcp==0.10.2"
 MAX_FINALIZE_ATTEMPTS = 3
 PRESENTATION_MANIFEST_VALIDATOR = r"""
 import json
@@ -518,9 +519,12 @@ Correct those findings rather than repeating the same presentation.
             "/opt/fast-agent.yaml",
             (Path(__file__).parent / "fast-agent.yaml").read_text(),
         )
-        package = os.getenv("BIRCH_FAST_AGENT_PACKAGE", "fast-agent-mcp")
+        package = os.getenv(
+            "BIRCH_FAST_AGENT_PACKAGE",
+            DEFAULT_BIRCH_FAST_AGENT_PACKAGE,
+        )
         command = (
-            f"uvx {shlex.quote(package)} go "
+            f"uvx --prerelease=allow {shlex.quote(package)} go "
             "--no-home --config-path /opt/fast-agent.yaml "
             "--card /opt/html-agent.md --agent birch-html-worker "
             "--model '$system.html' --shell "

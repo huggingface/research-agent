@@ -8,7 +8,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from fast_agent import AgentRequest, AppOpenRequest, HarnessAppContext
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 try:
     from .app_jobs import current_research_job

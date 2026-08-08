@@ -5,11 +5,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-RUN uv pip install --system --no-cache \
-    fast-agent-mcp==0.9.27 \
-    'fastmcp[apps]==3.4.4' \
+RUN uv pip install --prerelease=allow --system --no-cache \
+    fast-agent-mcp==0.10.2 \
     prefab-ui==0.20.2 \
-    huggingface_hub==1.24.0 \
     hf-xet==1.5.2 \
     pillow
 

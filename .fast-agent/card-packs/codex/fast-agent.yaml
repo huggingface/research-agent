@@ -9,10 +9,10 @@ model_references:
 
 # Default MCP Servers - these appear in the /connect menu
 mcp:
-  targets:
-  - name: openai
-    target: "https://developers.openai.com/mcp"
-  - name: hf
-    target: "https://huggingface.co/mcp"
-  - name: hf_docs_only
-    target: "https://huggingface.co/mcp?bouquet=docs"
+  servers:
+    openai:
+      target: "https://developers.openai.com/mcp"
+    hf:
+      target: "https://huggingface.co/mcp"
+    hf_docs_only:
+      target: "https://huggingface.co/mcp?bouquet=docs"
