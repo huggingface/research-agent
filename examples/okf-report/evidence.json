@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "hugging-face-hub",
+      "resource": "https://huggingface.co/",
+      "title": "Hugging Face Hub"
+    },
+    {
+      "id": "model-context-protocol",
+      "resource": "https://modelcontextprotocol.io/",
+      "title": "Model Context Protocol"
+    }
+  ]
+}
