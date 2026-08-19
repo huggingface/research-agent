@@ -1,4 +1,4 @@
-# OKF Evidence Demo
+# OKF Evidence
 
 The [Hugging Face Hub](https://huggingface.co/) hosts the researched artifacts.
 

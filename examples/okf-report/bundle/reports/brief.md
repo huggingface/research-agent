@@ -1,7 +1,7 @@
 ---
 type: Research Report
-title: OKF Evidence Demo
-description: A minimal research report with structured, claim-level provenance.
+title: OKF Evidence
+description: A research report with structured, claim-level provenance.
 tags:
 - research
 status: draft
@@ -17,10 +17,10 @@ sources:
   title: Model Context Protocol
 x_research_agent:
   workspace_id: example-okf-report
-  source_report_sha256: c1a297a4cf4b47511d0cfc242b9973c8d305d3bad07bee9da22a989ed578135c
+  source_report_sha256: f8a6fb48612865fa62bd70a9982b5808aaf3dca3ae688b375b6895d0856a35ce
 ---
 
-# OKF Evidence Demo
+# OKF Evidence
 
 The [Hugging Face Hub](https://huggingface.co/)[^hugging-face-hub] hosts the researched artifacts.
 
