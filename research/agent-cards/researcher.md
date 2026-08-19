@@ -50,6 +50,33 @@ Declare every persisted working artifact with a workspace-relative `path`,
 `output/report.md`. Do not claim completion until the manifest and every
 declared artifact can be read from the bucket.
 
+Also write `scratch/research/evidence.json` and declare it with media type
+`application/json` and role `evidence`. Use this contract:
+
+```json
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "stable-lowercase-source-id",
+      "resource": "https://canonical.example/source",
+      "title": "Human-readable source title",
+      "author": "team:source-owner",
+      "last_modified": "2026-08-19"
+    }
+  ]
+}
+```
+
+Only `id`, `resource`, and `title` are required per source. IDs must be stable
+lowercase slugs and must not depend on source ordering. Omit `author` and
+`last_modified` unless the source establishes them. Cite supported claims in
+the report with Markdown footnotes using the same IDs, for example
+`The Hub supports this operation.[^hf-hub-docs]`, and define each footnote near
+the end of the report. The host uses this evidence register to produce a draft
+Open Knowledge Format bundle; it does not turn agent-authored evidence into a
+verification or trust claim.
+
 Every artifact declared with `"role": "figure"` must also appear in
 `output/report.md` using Markdown image syntax. Prefer report-local images under
 `output/assets/` and reference them as `![Description](assets/name.png)`.

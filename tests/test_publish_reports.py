@@ -74,6 +74,9 @@ def test_discovery_allows_only_public_report_artifacts() -> None:
             f"{root}/chart.svg": b"svg",
             f"{root}/summary.json": b'{"private": true}',
             f"{root}/analysis.py": b"secret",
+            f"{root}/okf.zip": b"private knowledge",
+            f"{root}/okf/index.md": b"private index",
+            f"{root}/okf/chart.png": b"private evidence",
             "buckets/evalstate/research-agent/run-a/scratch/research/notes.md": (
                 b"private"
             ),
@@ -88,6 +91,9 @@ def test_discovery_allows_only_public_report_artifacts() -> None:
         "output/assets/chart.png",
         "output/chart.svg",
     }
+    assert not module.is_public_artifact("output/okf.zip")
+    assert not module.is_public_artifact("output/okf/index.md")
+    assert not module.is_public_artifact("output/okf/chart.png")
 
 
 def test_discovery_requires_both_reports() -> None:
@@ -165,6 +171,59 @@ def test_publication_rejects_tokens() -> None:
     with pytest.raises(module.PublicationError, match="token"):
         module.public_bytes(
             fs, artifact, "evalstate/research-agent", "evalstate/public"
+        )
+
+
+def test_publication_rejects_private_okf_links() -> None:
+    module = load_module()
+    source = "buckets/evalstate/research-agent/run-a/output/report.md"
+    fs = FileSystemSimulator(
+        {
+            source: (
+                b"[Evidence](https://huggingface.co/buckets/"
+                b"evalstate/research-agent/resolve/run-a/output/okf.zip)"
+            )
+        }
+    )
+    artifact = module.Artifact("run-a", "output/report.md", source, 100)
+
+    with pytest.raises(module.PublicationError, match="private OKF"):
+        module.public_bytes(
+            fs,
+            artifact,
+            "evalstate/research-agent",
+            "evalstate/public",
+        )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "output/%6f%6bf.zip",
+        "output//okf//index.md",
+        "output/%256f%256bf.zip",
+        "output/%2525256f%2525256bf.zip",
+    ],
+)
+def test_publication_rejects_encoded_private_okf_links(path: str) -> None:
+    module = load_module()
+    source = "buckets/evalstate/research-agent/run-a/output/report.md"
+    fs = FileSystemSimulator(
+        {
+            source: (
+                f"[Evidence](https://huggingface.co/buckets/evalstate/public/"
+                f"resolve/run-a/{path})"
+            ).encode()
+        }
+    )
+    artifact = module.Artifact("run-a", "output/report.md", source, 100)
+
+    with pytest.raises(module.PublicationError, match="private OKF"):
+        module.public_bytes(
+            fs,
+            artifact,
+            "evalstate/research-agent",
+            "evalstate/public",
         )
 
 

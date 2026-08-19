@@ -74,6 +74,14 @@ class ResearchJob:
     archive_template_version: str | None = None
     html_report_uri: str | None = None
     html_report_url: str | None = None
+    okf_status: str = "pending"
+    okf_bundle_uri: str | None = None
+    okf_bundle_url: str | None = None
+    okf_bundle_sha256: str | None = None
+    okf_source_count: int = 0
+    okf_citation_count: int = 0
+    okf_warnings: list[str] = field(default_factory=list)
+    okf_error: str | None = None
     error: str | None = None
     trace_path: str | None = None
     trace_archive_uri: str | None = None
@@ -176,6 +184,15 @@ class ResearchJob:
             "html_report_uri": self.html_report_uri,
             "html_report_url": self.html_report_url,
             "html_report_ready": bool(self.html_report_uri),
+            "okf_status": self.okf_status,
+            "okf_bundle_uri": self.okf_bundle_uri,
+            "okf_bundle_url": self.okf_bundle_url,
+            "okf_bundle_ready": bool(self.okf_bundle_uri),
+            "okf_bundle_sha256": self.okf_bundle_sha256,
+            "okf_source_count": self.okf_source_count,
+            "okf_citation_count": self.okf_citation_count,
+            "okf_warnings": list(self.okf_warnings),
+            "okf_error": self.okf_error,
             "error": self.error,
             "trace_path": self.trace_path,
             "trace_archive_uri": self.trace_archive_uri,
@@ -415,6 +432,15 @@ def unavailable_snapshot(job_id: str) -> dict[str, Any]:
         "html_report_uri": None,
         "html_report_url": None,
         "html_report_ready": False,
+        "okf_status": "unavailable",
+        "okf_bundle_uri": None,
+        "okf_bundle_url": None,
+        "okf_bundle_ready": False,
+        "okf_bundle_sha256": None,
+        "okf_source_count": 0,
+        "okf_citation_count": 0,
+        "okf_warnings": [],
+        "okf_error": None,
         "error": (
             "This research run is no longer available. Historical app views never "
             "start replacement work; ask Claude to run the research tool again."

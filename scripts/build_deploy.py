@@ -50,6 +50,7 @@ TARGETS = {
     "research-archive-template": (
         Overlay("deploy/research-archive/Dockerfile", "Dockerfile"),
         Overlay("deploy/research-archive/app.py", "app.py"),
+        Overlay("deploy/research-archive/okf_archive.py", "okf_archive.py"),
         Overlay("deploy/research-archive/index.html", "index.html"),
         Overlay(
             "deploy/research-archive/huggingface-logo.svg",

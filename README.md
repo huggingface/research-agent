@@ -98,11 +98,20 @@ The resulting workspace is:
 hf://buckets/<username>/research-agent/<run-id>/
 ├── scratch/
 │   ├── .workspace.json
-│   └── research/
+│   ├── research/
+│   │   ├── manifest.json
+│   │   └── evidence.json
+│   └── knowledge/
+│       └── manifest.json
 └── output/
     ├── .keep
     ├── report.md
-    └── report.html
+    ├── report.html
+    ├── okf.zip
+    └── okf/
+        ├── index.md
+        ├── reports/brief.md
+        └── references/evidence.md
 ```
 
 If identity, bucket access, or marker creation fails, the Harness invocation
@@ -131,6 +140,16 @@ display without changing or blocking the main research loop.
 
 The main agent writes Markdown and a research manifest into the authenticated
 bucket workspace. The runner verifies that handoff before presentation starts.
+
+After verification, a deterministic host stage projects the canonical Markdown
+and its optional structured evidence register into a private Open Knowledge
+Format (OKF) v0.2 bundle. The concepts are
+explicitly `draft` and unverified, carry stable source IDs, preserve claim
+footnotes, record the exact report digest, and are packaged as
+`output/okf.zip`. The completion marker at
+`scratch/knowledge/manifest.json` is written last. OKF compilation is additive:
+validation or export errors are reported but never make an otherwise valid
+Markdown or HTML report fail.
 
 The HTML stage then:
 
@@ -250,6 +269,12 @@ The provisioner:
 - reports version mismatches without silently overwriting older archives;
 - treats archive provisioning as optional so it cannot prevent research.
 
+Completed OKF bundles appear in an **Evidence** tab. The archive validates the
+bundle and completion digest locally, derives trust and staleness from standard
+OKF fields, reports unresolved or unused source IDs, compares provenance with
+the canonical report links, and supports source search and filtering. It never
+fetches source URLs or executes bundle content.
+
 ### Private session traces
 
 Completed, failed, and cancelled jobs export local Codex JSONL traces. In
@@ -273,7 +298,9 @@ rejected.
 
 Public examples are copied from private storage into a separate public bucket.
 The publication layer never moves or mutates source files and excludes scratch
-work, traces, manifests, code, and unapproved data files.
+work, traces, manifests, code, unapproved data files, and private OKF bundles.
+Reports that link directly to a private `output/okf` artifact are rejected
+rather than published with a dangling or disclosure-prone evidence link.
 
 Preview one report:
 

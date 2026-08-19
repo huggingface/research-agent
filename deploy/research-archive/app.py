@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import mimetypes
 import os
 import re
 import secrets
 import shutil
+import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,6 +26,18 @@ from fastapi.responses import FileResponse, HTMLResponse
 from latex2mathml.converter import convert as latex_to_mathml
 
 APP_ROOT = Path(__file__).parent
+_OKF_SPEC = importlib.util.spec_from_file_location(
+    "research_archive_okf",
+    APP_ROOT / "okf_archive.py",
+)
+if _OKF_SPEC is None or _OKF_SPEC.loader is None:
+    raise RuntimeError("Could not load the archive OKF consumer")
+_OKF_MODULE = importlib.util.module_from_spec(_OKF_SPEC)
+sys.modules[_OKF_SPEC.name] = _OKF_MODULE
+_OKF_SPEC.loader.exec_module(_OKF_MODULE)
+OkfArchiveError = _OKF_MODULE.OkfArchiveError
+inspect_okf = _OKF_MODULE.inspect_okf
+
 DEFAULT_RESEARCH_ROOT = Path(os.getenv("RESEARCH_ROOT", "/research"))
 DEFAULT_BUCKET_ID = os.getenv("RESEARCH_ARCHIVE_BUCKET")
 DEFAULT_READ_ONLY = os.getenv("RESEARCH_ARCHIVE_READ_ONLY", "").lower() in {
@@ -146,6 +160,7 @@ class RunSummary:
     status: str
     has_markdown: bool
     has_html: bool
+    has_okf: bool
     asset_count: int | None
     trace_count: int | None
 
@@ -158,6 +173,7 @@ class RunSummary:
             "status": self.status,
             "has_markdown": self.has_markdown,
             "has_html": self.has_html,
+            "has_okf": self.has_okf,
             "asset_count": self.asset_count,
             "trace_count": self.trace_count,
         }
@@ -187,6 +203,12 @@ class ResearchArchive:
     def summarize(self, run: Path) -> RunSummary:
         markdown_path = self._direct_file(run, run / "output" / "report.md")
         html_path = self._direct_file(run, run / "output" / "report.html")
+        okf_manifest = self._direct_file(
+            run,
+            run / "scratch" / "knowledge" / "manifest.json",
+        )
+        okf_brief = self._direct_file(run, run / "output" / "okf" / "reports" / "brief.md")
+        okf_archive = self._direct_file(run, run / "output" / "okf.zip")
         has_markdown = markdown_path is not None
         has_html = html_path is not None
         status = (
@@ -205,6 +227,7 @@ class ResearchArchive:
             status=status,
             has_markdown=has_markdown,
             has_html=has_html,
+            has_okf=any((okf_manifest, okf_brief, okf_archive)),
             asset_count=None,
             trace_count=None,
         )
@@ -239,6 +262,9 @@ class ResearchArchive:
             ),
             "html_url": (
                 f"/files/{run_id}/output/report.html" if summary.has_html else None
+            ),
+            "evidence_url": (
+                f"/api/runs/{run_id}/evidence" if summary.has_okf else None
             ),
         }
 
@@ -283,6 +309,94 @@ class ResearchArchive:
                 }
             )
         return files
+
+    def evidence(self, run_id: str) -> dict[str, Any]:
+        run = self.run_path(run_id)
+        if run.is_symlink() or not run.is_dir():
+            raise FileNotFoundError(run_id)
+        paths = {
+            "index": self._direct_file(run, run / "output" / "okf" / "index.md"),
+            "brief": self._direct_file(
+                run,
+                run / "output" / "okf" / "reports" / "brief.md",
+            ),
+            "reports_index": self._direct_file(
+                run,
+                run / "output" / "okf" / "reports" / "index.md",
+            ),
+            "references_index": self._direct_file(
+                run,
+                run / "output" / "okf" / "references" / "index.md",
+            ),
+            "evidence": self._direct_file(
+                run,
+                run / "output" / "okf" / "references" / "evidence.md",
+            ),
+            "manifest": self._direct_file(
+                run,
+                run / "scratch" / "knowledge" / "manifest.json",
+            ),
+            "bundle": self._direct_file(run, run / "output" / "okf.zip"),
+            "report": self._direct_file(run, run / "output" / "report.md"),
+        }
+        if not any(paths[name] for name in ("manifest", "brief", "bundle")):
+            raise FileNotFoundError("OKF bundle not found")
+        missing = [name for name, path in paths.items() if path is None]
+        if missing:
+            return {
+                "available": True,
+                "valid": False,
+                "error": "The OKF release is incomplete.",
+                "sources": [],
+                "diagnostics": [
+                    {
+                        "level": "error",
+                        "code": "incomplete-bundle",
+                        "message": (
+                            "Required OKF files are missing: " + ", ".join(missing)
+                        ),
+                    }
+                ],
+                "download_url": (
+                    f"/files/{run_id}/output/okf.zip?download=true"
+                    if paths["bundle"]
+                    else None
+                ),
+            }
+        try:
+            projection = inspect_okf(
+                index=paths["index"].read_bytes(),
+                brief=paths["brief"].read_bytes(),
+                manifest=paths["manifest"].read_bytes(),
+                bundle=paths["bundle"].read_bytes(),
+                report=paths["report"].read_text(encoding="utf-8"),
+                expanded={
+                    "reports/index.md": paths["reports_index"].read_bytes(),
+                    "references/index.md": paths["references_index"].read_bytes(),
+                    "references/evidence.md": paths["evidence"].read_bytes(),
+                },
+            )
+        except (OSError, UnicodeError, OkfArchiveError) as exc:
+            return {
+                "available": True,
+                "valid": False,
+                "error": str(exc)[:240],
+                "sources": [],
+                "diagnostics": [
+                    {
+                        "level": "error",
+                        "code": "invalid-bundle",
+                        "message": "The OKF bundle could not be validated.",
+                    }
+                ],
+                "download_url": None,
+            }
+        return {
+            "available": True,
+            **projection,
+            "error": None,
+            "download_url": f"/files/{run_id}/output/okf.zip?download=true",
+        }
 
     def run_path(self, run_id: str) -> Path:
         if not SAFE_SEGMENT.fullmatch(run_id):
@@ -646,6 +760,13 @@ def create_app(
             return archive.markdown(run_id)
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=404, detail="Markdown not found") from exc
+
+    @app.get("/api/runs/{run_id}/evidence")
+    def run_evidence(run_id: str) -> dict[str, Any]:
+        try:
+            return archive.evidence(run_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="Evidence not found") from exc
 
     @app.delete("/api/runs/{run_id}")
     def delete_run(run_id: str) -> dict[str, str]:

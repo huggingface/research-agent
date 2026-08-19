@@ -7,7 +7,8 @@ RUN pip install --no-cache-dir \
     uvicorn[standard]==0.35.0 \
     markdown==3.8.2 \
     latex2mathml==3.81.0 \
-    bleach==6.2.0
+    bleach==6.2.0 \
+    pyyaml==6.0.3
 
 COPY --link ./ /app
 

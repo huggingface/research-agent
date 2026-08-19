@@ -130,6 +130,15 @@ _BASE: dict[str, Any] = {
     "html_report_uri": None,
     "html_report_url": None,
     "html_report_ready": False,
+    "okf_status": "pending",
+    "okf_bundle_uri": None,
+    "okf_bundle_url": None,
+    "okf_bundle_ready": False,
+    "okf_bundle_sha256": None,
+    "okf_source_count": 0,
+    "okf_citation_count": 0,
+    "okf_warnings": [],
+    "okf_error": None,
     "error": None,
     "trace_path": "~/research/sessions/research-preview/trace.jsonl",
     "trace_archive_uri": None,
@@ -171,6 +180,19 @@ def preview_snapshot(state: str) -> dict[str, Any]:
                 "research-preview/output/report.html"
             ),
             html_report_ready=True,
+            okf_status="ready",
+            okf_bundle_uri=(
+                "hf://buckets/evalstate/research-agent/research-preview/"
+                "output/okf.zip"
+            ),
+            okf_bundle_url=(
+                "https://huggingface.co/buckets/evalstate/research-agent/"
+                "resolve/research-preview/output/okf.zip?download=true"
+            ),
+            okf_bundle_ready=True,
+            okf_bundle_sha256="e3b0c44298fc1c149afbf4c8996fb924",
+            okf_source_count=12,
+            okf_citation_count=10,
             archive_space_url=(
                 "https://huggingface.co/spaces/evalstate/research-agent"
             ),

@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 
 import pytest
-
 from fast_agent import AgentAuth
+
 from research.app_jobs import ResearchJob
 from research.research_runner import (
     ResearchRunner,
@@ -76,6 +76,18 @@ class FailingAfterMarkdownRunner(ResearchRunner):
     async def invoke(self, job: ResearchJob, auth: None) -> str:
         job.markdown_report = "# Completed findings"
         raise RuntimeError("presentation handoff rejected a chart")
+
+
+class OkfFailingRunner(SuccessfulResearchRunner):
+    async def _compile_okf_bundle(
+        self,
+        job: ResearchJob,
+        auth: AgentAuth,
+    ):
+        raise ValueError(
+            "evidence rejected Authorization: Bearer caller-token "
+            "https://example.test/?token=private"
+        )
 
 
 class FinalizationDiagnosticRunner(RetryingReportRunner):
@@ -159,6 +171,25 @@ async def test_runner_records_completed_terminal_narrative(
     assert "ready to review" in job.activity_summary
     assert "interactive HTML report" in job.activity_summary
     assert job.html_report_uri == "hf://bucket/report.html"
+    assert job.okf_status == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_okf_failure_is_nonfatal_and_redacted(tmp_path: Path) -> None:
+    job = ResearchJob(id="research-test", topic="topic", owner_id="alice")
+
+    await OkfFailingRunner(tmp_path).run(
+        job,
+        AgentAuth.bearer("caller-token"),
+    )
+
+    assert job.status == "completed"
+    assert job.html_report_uri == "hf://bucket/report.html"
+    assert job.okf_status == "failed"
+    assert job.okf_bundle_uri is None
+    assert job.okf_error is not None
+    assert "caller-token" not in job.okf_error
+    assert "private" not in job.okf_error
 
 
 @pytest.mark.asyncio

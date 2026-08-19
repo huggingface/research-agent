@@ -14,12 +14,13 @@ from fast_agent.llm.request_params import RequestParams
 from huggingface_hub import HfApi
 
 from .activity_narrator import ActivityNarrator, current_activity_narrator
-from .app_auth import effective_agent_auth
 from .app_artifacts import finalize_bucket_html
+from .app_auth import effective_agent_auth
 from .app_jobs import ResearchJob, current_research_job
 from .app_observability import JobProgressHandler, try_export_trace
 from .artifact_contract import verify_research_handoff
 from .birch_renderer import generate_birch_report
+from .okf_compiler import OkfBuild, compile_okf_bundle
 from .research_workspace import ensure_workspace
 
 if TYPE_CHECKING:
@@ -141,6 +142,7 @@ class ResearchRunner:
         """Add app lifecycle handling around the protocol-neutral invocation."""
         try:
             job.result = await self.invoke(job, auth)
+            await self.build_okf_bundle(job, auth)
             await self.build_html_report(job, auth)
             await try_export_trace(job, self.home)
             job.status = "completed"
@@ -182,6 +184,53 @@ class ResearchRunner:
             job.status = "failed"
             job.phase = "failed"
             job.add_event("Research job closed after failure", kind="error")
+
+    async def build_okf_bundle(
+        self,
+        job: ResearchJob,
+        auth: AgentAuth | None,
+    ) -> None:
+        """Build the optional private knowledge projection without failing reports."""
+        if auth is None:
+            job.okf_status = "unavailable"
+            return
+        auth = effective_agent_auth(auth)
+        if auth is None or not auth.token:
+            job.okf_status = "unavailable"
+            return
+        job.okf_status = "building"
+        job.add_event("Building private OKF knowledge bundle", kind="Knowledge")
+        try:
+            result = await self._compile_okf_bundle(job, auth)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - optional projection must not fail reports
+            job.okf_status = "failed"
+            job.okf_error = _safe_error_message(exc)
+            job.add_event(
+                f"OKF bundle unavailable: {job.okf_error}",
+                kind="artifact",
+            )
+            return
+        job.okf_status = "ready"
+        job.okf_bundle_uri = result.bundle_uri
+        job.okf_bundle_url = result.bundle_url
+        job.okf_bundle_sha256 = result.bundle_sha256
+        job.okf_source_count = result.source_count
+        job.okf_citation_count = result.citation_count
+        job.okf_warnings = list(result.warnings)
+        job.okf_error = None
+        job.add_event(
+            f"OKF knowledge bundle ready with {result.source_count} sources",
+            kind="Knowledge",
+        )
+
+    async def _compile_okf_bundle(
+        self,
+        job: ResearchJob,
+        auth: AgentAuth,
+    ) -> OkfBuild:
+        return await asyncio.to_thread(compile_okf_bundle, job, auth)
 
     async def build_html_report(
         self,

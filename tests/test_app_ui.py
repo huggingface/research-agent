@@ -28,6 +28,8 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
         "archive_app_url": "https://alice-research-agent.hf.space",
         "archive_template_version": "1.0.0",
         "html_report_ready": True,
+        "okf_bundle_ready": True,
+        "okf_bundle_url": "https://example.com/report.okf.zip",
         "trace_path": None,
         "result": "Completed.",
         "error": None,
@@ -58,6 +60,9 @@ def test_completed_view_continues_in_chat_with_full_markdown() -> None:
     assert "HTML report unavailable" in payload
     assert "Building HTML report" in payload
     assert "Markdown report" in payload
+    assert "Download OKF bundle" in payload
+    assert "https://example.com/report.okf.zip" in payload
+    assert "dispatch-okf-action" in payload
     assert "dispatch-archive-link" in payload
     assert "dispatch-archive-card" not in payload
     assert "https://huggingface.co/spaces/alice/research-agent" in payload

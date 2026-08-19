@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from fast_agent import AgentAuth
+
 from research.app_jobs import (
     ResearchJob,
     ResearchJobStore,
@@ -29,6 +29,9 @@ def test_status_snapshot_excludes_report_payload() -> None:
         {"kind": "image", "src": "data:image/png;base64,c2VjcmV0", "alt": "Chart"}
     ]
     job.markdown_report_uri = "hf://buckets/alice/research/output/report.md"
+    job.okf_status = "ready"
+    job.okf_bundle_uri = "hf://buckets/alice/research/output/okf.zip"
+    job.okf_bundle_sha256 = "digest"
 
     snapshot = job.snapshot()
 
@@ -37,6 +40,8 @@ def test_status_snapshot_excludes_report_payload() -> None:
     assert "markdown_report_blocks" not in snapshot
     assert "Private report body" not in str(snapshot)
     assert "data:image" not in str(snapshot)
+    assert snapshot["okf_bundle_ready"]
+    assert snapshot["okf_bundle_sha256"] == "digest"
 
 
 @pytest.mark.asyncio

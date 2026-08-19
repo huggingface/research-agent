@@ -224,6 +224,9 @@ BROADSHEET_CSS = """
   width: 100%;
   color: var(--dispatch-accent);
 }
+.dispatch-okf-action {
+  grid-column: 1 / -1;
+}
 .dispatch-markdown-report {
   margin-top: 16px;
   padding: 22px;
@@ -952,6 +955,15 @@ def build_research_ui(
                             disabled=~STATE.job.html_report_ready,
                             onClick=OpenLink(STATE.job.html_report_url),
                         )
+                        with If(STATE.job.okf_bundle_ready):
+                            Button(
+                                "Download OKF bundle",
+                                variant="outline",
+                                css_class=(
+                                    "dispatch-report-action dispatch-okf-action"
+                                ),
+                                onClick=OpenLink(STATE.job.okf_bundle_url),
+                            )
                     with If(STATE.chat_sent):
                         Text(
                             "Added to chat.",

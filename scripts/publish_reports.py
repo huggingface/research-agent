@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import re
 import sys
@@ -12,6 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any, BinaryIO
+from urllib.parse import unquote
 
 from huggingface_hub import HfApi, HfFileSystem, Volume, get_token
 from huggingface_hub.errors import BucketNotFoundError, RepositoryNotFoundError
@@ -44,6 +46,11 @@ def bucket_path(bucket_id: str) -> str:
 
 def is_public_artifact(relative_path: str) -> bool:
     path = PurePosixPath(relative_path)
+    if (
+        path == PurePosixPath("output/okf.zip")
+        or path.parts[:2] == ("output", "okf")
+    ):
+        return False
     if path in {
         PurePosixPath("output/report.md"),
         PurePosixPath("output/report.html"),
@@ -151,12 +158,31 @@ def public_bytes(
             f"{artifact.run_id}/{artifact.relative_path} still references the "
             "private source bucket."
         )
+    if artifact.relative_path in {
+        "output/report.md",
+        "output/report.html",
+    } and _references_private_okf(content):
+        raise PublicationError(
+            f"{artifact.run_id}/{artifact.relative_path} references a private "
+            "OKF bundle."
+        )
     if HF_TOKEN.search(content):
         raise PublicationError(
             f"{artifact.run_id}/{artifact.relative_path} looks like it contains "
             "a Hugging Face token."
         )
     return content
+
+
+def _references_private_okf(content: bytes) -> bool:
+    text = html.unescape(content.decode("utf-8", errors="ignore"))
+    while True:
+        decoded = unquote(text)
+        if decoded == text:
+            break
+        text = decoded
+    normalized = re.sub(r"/+", "/", text.replace("\\", "/").lower())
+    return bool(re.search(r"(?:^|/)output/okf(?:\.zip|/)", normalized))
 
 
 def artifact_changed(

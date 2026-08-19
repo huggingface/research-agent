@@ -110,6 +110,9 @@ def test_deployment_sources_are_staged_from_canonical_sources(
     assert (template / "archive-template.json").read_bytes() == (
         ROOT / "deploy/research-archive/archive-template.json"
     ).read_bytes()
+    assert (template / "okf_archive.py").read_bytes() == (
+        ROOT / "deploy/research-archive/okf_archive.py"
+    ).read_bytes()
     assert "Research Archive Template" in (template / "README.md").read_text()
 
 

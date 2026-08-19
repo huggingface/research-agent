@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import io
 import json
 import os
 import sys
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from research.archive_provisioning import ARCHIVE_TEMPLATE_VERSION
+from research.okf_compiler import build_okf_files
 
 
 def load_archive_module():
@@ -20,6 +24,101 @@ def load_archive_module():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def write_okf_bundle(
+    run: Path,
+    report: str,
+    *,
+    brief_frontmatter: str = "",
+) -> None:
+    files, metadata = build_okf_files(
+        report,
+        title="Client Success Rates",
+        description="Evidence-backed client success findings.",
+        workspace_id=run.name,
+        report_sha256=hashlib.sha256(report.encode()).hexdigest(),
+        evidence_bytes=json.dumps(
+            {
+                "schema_version": 1,
+                "sources": [
+                    {
+                        "id": "hf-source",
+                        "resource": "https://huggingface.co/",
+                        "title": "Hugging Face",
+                    }
+                ],
+            }
+        ).encode(),
+        generated_at=datetime(2026, 8, 19, 12, tzinfo=UTC),
+    )
+    if brief_frontmatter:
+        files["reports/brief.md"] = files["reports/brief.md"].replace(
+            b"status: draft\n",
+            f"status: draft\n{brief_frontmatter}".encode(),
+            1,
+        )
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path, content in files.items():
+            archive.writestr(path, content)
+            destination = run / "output" / "okf" / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+    bundle = output.getvalue()
+    (run / "output" / "okf.zip").write_bytes(bundle)
+    manifest = {
+        "schema_version": 1,
+        "stage": "knowledge",
+        "status": "complete",
+        "okf_version": "0.2",
+        "source_report_sha256": metadata["report_sha256"],
+        "bundle_sha256": hashlib.sha256(bundle).hexdigest(),
+        "warnings": metadata["warnings"],
+        "artifacts": [
+            {
+                "path": f"output/okf/{path}",
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+            for path, content in files.items()
+        ]
+        + [
+            {
+                "path": "output/okf.zip",
+                "sha256": hashlib.sha256(bundle).hexdigest(),
+            }
+        ],
+    }
+    path = run / "scratch" / "knowledge" / "manifest.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest))
+
+
+def replace_okf_member(run: Path, member: str, content: bytes) -> None:
+    destination = run / "output" / "okf" / member
+    destination.write_bytes(content)
+    bundle_path = run / "output" / "okf.zip"
+    with zipfile.ZipFile(bundle_path) as archive:
+        members = {
+            name: archive.read(name)
+            for name in archive.namelist()
+        }
+    members[member] = content
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, value in members.items():
+            archive.writestr(name, value)
+    bundle = output.getvalue()
+    bundle_path.write_bytes(bundle)
+    manifest_path = run / "scratch" / "knowledge" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    for artifact in manifest["artifacts"]:
+        if artifact["path"] == f"output/okf/{member}":
+            artifact["sha256"] = hashlib.sha256(content).hexdigest()
+        elif artifact["path"] == "output/okf.zip":
+            artifact["sha256"] = hashlib.sha256(bundle).hexdigest()
+    manifest["bundle_sha256"] = hashlib.sha256(bundle).hexdigest()
+    manifest_path.write_text(json.dumps(manifest))
 
 
 def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
@@ -38,6 +137,10 @@ def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
     (run / "scratch" / ".workspace.json").write_text(
         json.dumps({"checked_at": "2026-07-22T12:30:00+00:00"})
     )
+    write_okf_bundle(
+        run,
+        "# Client Success Rates\n\n[Source](https://huggingface.co/)",
+    )
 
     archive = module.ResearchArchive(tmp_path)
     summaries = archive.list_runs()
@@ -53,6 +156,7 @@ def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
     assert summaries[0].trace_count is None
     assert detail["has_markdown"]
     assert detail["has_html"]
+    assert detail["has_okf"]
     assert detail["markdown"] == (
         "# Client Success Rates\n\n[Source](https://huggingface.co/)"
     )
@@ -68,6 +172,223 @@ def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
     markdown = client.get(f"/api/runs/{run.name}/markdown")
     assert markdown.status_code == 200
     assert markdown.json()["markdown"] == detail["markdown"]
+    evidence = client.get(f"/api/runs/{run.name}/evidence")
+    assert evidence.status_code == 200
+    payload = evidence.json()
+    assert payload["valid"]
+    assert payload["version"] == "0.2"
+    assert payload["trust_tier"] == "unverified"
+    assert payload["status"] == "draft"
+    assert payload["integrity"]
+    assert payload["report_integrity"]
+    assert payload["source_count"] == 1
+    assert payload["coverage_percent"] == 100
+    assert payload["sources"][0]["id"] == "hf-source"
+    assert payload["sources"][0]["health"] == "healthy"
+    download = client.get(payload["download_url"])
+    assert download.status_code == 200
+    assert download.headers["content-disposition"].startswith("attachment;")
+
+
+def test_archive_reports_invalid_okf_without_rendering_untrusted_data(
+    tmp_path: Path,
+) -> None:
+    module = load_archive_module()
+    run = tmp_path / "26-08-19-invalid-okf-a123"
+    (run / "output").mkdir(parents=True)
+    report = "# Report\n\n[Source](https://example.test/)"
+    (run / "output" / "report.md").write_text(report)
+    write_okf_bundle(run, report)
+    manifest_path = run / "scratch" / "knowledge" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["bundle_sha256"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest))
+
+    client = TestClient(module.create_app(tmp_path))
+    payload = client.get(f"/api/runs/{run.name}/evidence").json()
+
+    assert payload["available"]
+    assert not payload["valid"]
+    assert not payload["integrity"]
+    assert any(
+        item["code"] == "bundle-integrity"
+        for item in payload["diagnostics"]
+    )
+
+
+def test_archive_derives_human_review_and_staleness(tmp_path: Path) -> None:
+    module = load_archive_module()
+    run = tmp_path / "26-08-19-reviewed-okf-a123"
+    (run / "output").mkdir(parents=True)
+    report = "# Report\n\n[Source](https://example.test/)"
+    (run / "output" / "report.md").write_text(report)
+    write_okf_bundle(
+        run,
+        report,
+        brief_frontmatter=(
+            "verified: {by: 'human:alice', at: '2026-08-18T10:00:00Z'}\n"
+            "stale_after: '2020-01-01'\n"
+        ),
+    )
+
+    payload = TestClient(module.create_app(tmp_path)).get(
+        f"/api/runs/{run.name}/evidence"
+    ).json()
+
+    assert payload["valid"]
+    assert payload["trust_tier"] == "human-reviewed"
+    assert payload["stale"]
+
+
+def test_archive_detects_expanded_concept_tampering(tmp_path: Path) -> None:
+    module = load_archive_module()
+    run = tmp_path / "26-08-19-tampered-okf-a123"
+    (run / "output").mkdir(parents=True)
+    report = "# Report\n\n[Source](https://example.test/)"
+    (run / "output" / "report.md").write_text(report)
+    write_okf_bundle(run, report)
+    brief = run / "output" / "okf" / "reports" / "brief.md"
+    brief.write_text(brief.read_text() + "\nTampered after release.\n")
+
+    payload = TestClient(module.create_app(tmp_path)).get(
+        f"/api/runs/{run.name}/evidence"
+    ).json()
+
+    assert not payload["valid"]
+    assert not payload["integrity"]
+    assert any(
+        item["code"] == "artifact-integrity"
+        for item in payload["diagnostics"]
+    )
+
+
+def test_archive_detects_expanded_evidence_register_tampering(
+    tmp_path: Path,
+) -> None:
+    module = load_archive_module()
+    run = tmp_path / "26-08-19-tampered-evidence-a123"
+    (run / "output").mkdir(parents=True)
+    report = "# Report\n\n[Source](https://example.test/)"
+    (run / "output" / "report.md").write_text(report)
+    write_okf_bundle(run, report)
+    evidence = run / "output" / "okf" / "references" / "evidence.md"
+    evidence.write_text(evidence.read_text() + "\nTampered evidence register.\n")
+
+    payload = TestClient(module.create_app(tmp_path)).get(
+        f"/api/runs/{run.name}/evidence"
+    ).json()
+
+    assert not payload["valid"]
+    assert not payload["integrity"]
+    assert any(
+        item["code"] == "artifact-integrity"
+        for item in payload["diagnostics"]
+    )
+
+
+def test_archive_rejects_zip_that_differs_from_expanded_concepts(
+    tmp_path: Path,
+) -> None:
+    module = load_archive_module()
+    run = tmp_path / "26-08-19-zip-mismatch-a123"
+    (run / "output").mkdir(parents=True)
+    report = "# Report\n\n[Source](https://example.test/)"
+    (run / "output" / "report.md").write_text(report)
+    write_okf_bundle(run, report)
+    bundle_path = run / "output" / "okf.zip"
+    with zipfile.ZipFile(bundle_path) as archive:
+        members = {name: archive.read(name) for name in archive.namelist()}
+    members["reports/brief.md"] += b"\nDifferent downloadable content.\n"
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, value in members.items():
+            archive.writestr(name, value)
+    bundle = output.getvalue()
+    bundle_path.write_bytes(bundle)
+    manifest_path = run / "scratch" / "knowledge" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["bundle_sha256"] = hashlib.sha256(bundle).hexdigest()
+    for artifact in manifest["artifacts"]:
+        if artifact["path"] == "output/okf.zip":
+            artifact["sha256"] = manifest["bundle_sha256"]
+    manifest_path.write_text(json.dumps(manifest))
+
+    payload = TestClient(module.create_app(tmp_path)).get(
+        f"/api/runs/{run.name}/evidence"
+    ).json()
+
+    assert not payload["valid"]
+    assert not payload["archive_integrity"]
+    assert any(
+        item["code"] == "archive-contents"
+        for item in payload["diagnostics"]
+    )
+
+
+def test_archive_returns_diagnostics_for_partial_okf_release(tmp_path: Path) -> None:
+    module = load_archive_module()
+    run = tmp_path / "26-08-19-partial-okf-a123"
+    (run / "output").mkdir(parents=True)
+    (run / "output" / "report.md").write_text("# Report")
+    manifest = run / "scratch" / "knowledge" / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"stage": "knowledge"}')
+
+    client = TestClient(module.create_app(tmp_path))
+    summary = client.get("/api/runs").json()["runs"][0]
+    payload = client.get(f"/api/runs/{run.name}/evidence").json()
+
+    assert summary["has_okf"]
+    assert payload["available"]
+    assert not payload["valid"]
+    assert payload["diagnostics"][0]["code"] == "incomplete-bundle"
+
+
+def test_archive_rejects_unknown_lifecycle_status(tmp_path: Path) -> None:
+    module = load_archive_module()
+    run = tmp_path / "26-08-19-status-okf-a123"
+    (run / "output").mkdir(parents=True)
+    report = "# Report\n\n[Source](https://example.test/)"
+    (run / "output" / "report.md").write_text(report)
+    write_okf_bundle(run, report)
+    brief = run / "output" / "okf" / "reports" / "brief.md"
+    content = brief.read_bytes().replace(b"status: draft", b"status: invented", 1)
+    replace_okf_member(run, "reports/brief.md", content)
+
+    payload = TestClient(module.create_app(tmp_path)).get(
+        f"/api/runs/{run.name}/evidence"
+    ).json()
+
+    assert not payload["valid"]
+    assert any(
+        item["code"] == "invalid-status"
+        for item in payload["diagnostics"]
+    )
+
+
+def test_archive_rejects_encoded_sensitive_source_query(tmp_path: Path) -> None:
+    module = load_archive_module()
+    run = tmp_path / "26-08-19-sensitive-source-a123"
+    (run / "output").mkdir(parents=True)
+    report = "# Report\n\n[Source](https://example.test/)"
+    (run / "output" / "report.md").write_text(report)
+    write_okf_bundle(run, report)
+    brief = run / "output" / "okf" / "reports" / "brief.md"
+    content = brief.read_bytes().replace(
+        b"https://example.test/",
+        b"https://example.test/?%74oken=secret",
+    )
+    replace_okf_member(run, "reports/brief.md", content)
+
+    payload = TestClient(module.create_app(tmp_path)).get(
+        f"/api/runs/{run.name}/evidence"
+    ).json()
+
+    assert not payload["valid"]
+    assert any(
+        item["code"] == "invalid-source-url"
+        for item in payload["diagnostics"]
+    )
 
 
 def test_archive_renders_same_run_markdown_images(tmp_path: Path) -> None:
@@ -367,10 +688,15 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert 'target="_blank" rel="noopener noreferrer"' in page.text
     assert "markdowns: new Map()" in page.text
     assert "inventories: new Map()" in page.text
+    assert "evidences: new Map()" in page.text
+    assert '...(run.has_okf ? ["evidence"] : [])' in page.text
+    assert 'fetch(`/api/runs/${encodeURIComponent(id)}/evidence`)' in page.text
+    assert "Download OKF bundle" in page.text
+    assert "All source health" in page.text
     assert 'fileUrl(id, "output/report.html")' in page.text
     assert 'fetch(`/api/runs/${encodeURIComponent(id)}/markdown`)' in page.text
     assert 'fetch(`/api/runs/${encodeURIComponent(id)}/files`)' in page.text
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/svg+xml")
-    assert client.get("/health").json()["template_version"] == "1.2.8"
+    assert client.get("/health").json()["template_version"] == ARCHIVE_TEMPLATE_VERSION
     assert module.TEMPLATE_MARKER["template_version"] == ARCHIVE_TEMPLATE_VERSION
