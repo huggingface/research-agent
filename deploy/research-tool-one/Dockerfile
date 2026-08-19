@@ -6,7 +6,7 @@ RUN apt-get update && \
 
 WORKDIR /app
 RUN uv pip install --prerelease=allow --system --no-cache \
-    fast-agent-mcp==0.10.2 \
+    fast-agent-mcp==0.10.9 \
     pillow
 
 COPY --link ./ /app

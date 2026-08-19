@@ -6,7 +6,7 @@ RUN apt-get update && \
 
 WORKDIR /app
 RUN uv pip install --prerelease=allow --system --no-cache \
-    fast-agent-mcp==0.10.2 \
+    fast-agent-mcp==0.10.9 \
     prefab-ui==0.20.2 \
     hf-xet==1.5.2 \
     pillow

@@ -159,7 +159,7 @@ fast-agent Harness and registers the `researcher` UI tool directly.
 
 ```bash
 uv run --prerelease=allow \
-  --with 'fast-agent-mcp==0.10.2' \
+  --with 'fast-agent-mcp==0.10.9' \
   --with 'prefab-ui==0.20.2' \
   --with pillow \
   python fastmcp_research_app.py \
@@ -174,7 +174,7 @@ This is the local command closest to the deployed Space.
 Install the published CLI:
 
 ```bash
-uv tool install --prerelease=allow 'fast-agent-mcp==0.10.2'
+uv tool install --prerelease=allow 'fast-agent-mcp==0.10.9'
 ```
 
 Alternatively, activate an environment that provides the `fast-agent` command.
@@ -192,7 +192,7 @@ Harness wrapper and bucket preparation used by the MCP App, use:
 
 ```bash
 uv run --prerelease=allow \
-  --with 'fast-agent-mcp==0.10.2' \
+  --with 'fast-agent-mcp==0.10.9' \
   python harness_chat.py
 ```
 
@@ -314,7 +314,7 @@ Render real component trees with static states and local Chrome:
 
 ```bash
 uv run --prerelease=allow \
-  --with 'fast-agent-mcp==0.10.2' \
+  --with 'fast-agent-mcp==0.10.9' \
   --with 'prefab-ui==0.20.2' \
   --with pillow \
   python scripts/render_app_preview.py --state all
@@ -327,7 +327,7 @@ Render the Hugging Face design packs:
 
 ```bash
 uv run --prerelease=allow \
-  --with 'fast-agent-mcp==0.10.2' \
+  --with 'fast-agent-mcp==0.10.9' \
   --with 'prefab-ui==0.20.2' \
   --with pillow \
   python scripts/render_design_packs.py

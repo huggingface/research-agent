@@ -92,7 +92,7 @@ def test_presentation_worker_is_stateless_and_uses_the_same_session_mount() -> N
     assert mount.mount_path == "/workspace"
     assert not mount.read_only
     assert sandbox._forward_hf_token
-    assert DEFAULT_BIRCH_FAST_AGENT_PACKAGE == "fast-agent-mcp==0.10.2"
+    assert DEFAULT_BIRCH_FAST_AGENT_PACKAGE == "fast-agent-mcp==0.10.9"
     assert "model: $system.html" in SANDBOX_AGENT_CARD
     assert "use_history: false" in SANDBOX_AGENT_CARD
     assert "/workspace/scratch/research/manifest.json" in SANDBOX_AGENT_CARD

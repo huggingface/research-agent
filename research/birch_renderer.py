@@ -33,7 +33,7 @@ SKILL_ROOT = Path(__file__).parent / "skills" / "birch-html"
 SANDBOX_SKILL_ROOT = "/opt/birch"
 SANDBOX_WORKSPACE_ROOT = "/workspace"
 BIRCH_STYLE_MARKER = "__BIRCH_SYSTEM_CSS__"
-DEFAULT_BIRCH_FAST_AGENT_PACKAGE = "fast-agent-mcp==0.10.2"
+DEFAULT_BIRCH_FAST_AGENT_PACKAGE = "fast-agent-mcp==0.10.9"
 MAX_FINALIZE_ATTEMPTS = 3
 PRESENTATION_MANIFEST_VALIDATOR = r"""
 import json

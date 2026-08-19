@@ -36,7 +36,7 @@ def test_researcher_pins_compatible_fast_agent_stack() -> None:
     dockerfile = (ROOT / "deploy/researcher/Dockerfile").read_text()
     config = (ROOT / "research/fast-agent.yaml").read_text()
 
-    assert "fast-agent-mcp==0.10.2" in dockerfile
+    assert "fast-agent-mcp==0.10.9" in dockerfile
     assert "--prerelease=allow" in dockerfile
     assert "fastmcp-slim" not in dockerfile
     assert "fastmcp[apps]" not in dockerfile
@@ -47,7 +47,7 @@ def test_researcher_pins_compatible_fast_agent_stack() -> None:
     assert "llm_retries: 5" in config
 
     legacy_dockerfile = (ROOT / "deploy/research-tool-one/Dockerfile").read_text()
-    assert "fast-agent-mcp==0.10.2" in legacy_dockerfile
+    assert "fast-agent-mcp==0.10.9" in legacy_dockerfile
     assert "--prerelease=allow" in legacy_dockerfile
     assert "fastmcp-slim" not in legacy_dockerfile
     assert "huggingface_hub" not in legacy_dockerfile
