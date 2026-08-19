@@ -137,10 +137,10 @@ def test_builds_conformant_bundle_with_stable_citations() -> None:
             "last_modified": "2026-08-01",
         }
     ]
-    assert brief.count("[^official-docs]") == 3
+    assert "[^official-docs]" not in brief
     assert "ignore.test" not in str(fm)
     assert metadata["source_count"] == 1
-    assert metadata["citation_count"] == 1
+    assert metadata["citation_count"] == 0
     assert files["index.md"].startswith(b'---\nokf_version: "0.2"')
 
 
@@ -186,6 +186,7 @@ def test_preserves_existing_stable_source_footnotes() -> None:
             "title": "API documentation",
         }
     ]
+    assert files["reports/brief.md"].decode().count("[^api-docs]") == 2
     assert metadata["citation_count"] == 1
     assert not any("not cited" in warning for warning in metadata["warnings"])
 
@@ -277,3 +278,76 @@ def test_does_not_treat_sensitive_or_credentialed_urls_as_sources() -> None:
         "https://example.test/public"
     ]
     assert "secret" not in files["references/evidence.md"].decode()
+
+
+def test_discovers_safe_bare_urls_without_creating_claim_citations() -> None:
+    report = (
+        "# Report\n\n"
+        "Dataset: https://example.test/dataset\n\n"
+        "`https://ignore.test/inline`\n\n"
+        "    https://ignore.test/indented\n\n"
+        "```\nhttps://ignore.test/fenced\n```\n\n"
+        "Secret: https://example.test/private?token=secret\n"
+    )
+
+    files, metadata = build_okf_files(
+        report,
+        title="Report",
+        description="Raw request that should not leak into the summary.",
+        workspace_id="run",
+        report_sha256="digest",
+    )
+
+    sources = frontmatter(files["reports/brief.md"])["sources"]
+    assert [source["resource"] for source in sources] == [
+        "https://example.test/dataset"
+    ]
+    assert metadata["citation_count"] == 0
+    assert "[^src-" not in files["reports/brief.md"].decode()
+
+
+def test_derives_description_from_tldr_and_ignores_code_citations() -> None:
+    report = (
+        "# TimeSpot Reproduction\n\n"
+        "## TL;DR\n\n"
+        "A deterministic reproduction path exists using pinned artifacts and "
+        "explicit evaluation settings.\n\n"
+        "## Details\n\n"
+        "`A code sample is not evidence.[^paper]`\n\n"
+        "```\nNor is this.[^paper]\n```\n\n"
+        "| Navigation | [^paper] |\n"
+        "|---|---|\n\n"
+        "Navigation | [^paper]\n\n"
+        "<!-- [^paper] -->\n\n"
+        "Text <span>Raw HTML is not report prose.[^paper]</span>\n\n"
+        "<div>\nRaw HTML block content.[^paper]\n</div>\n\n"
+        "  [^paper]: https://example.test/paper\n"
+    )
+    evidence = json.dumps(
+        {
+            "schema_version": 1,
+            "sources": [
+                {
+                    "id": "paper",
+                    "resource": "https://example.test/paper",
+                    "title": "Paper",
+                }
+            ],
+        }
+    ).encode()
+
+    files, metadata = build_okf_files(
+        report,
+        title="Report",
+        description="Investigate this raw request https://example.test/very/long",
+        workspace_id="run",
+        report_sha256="digest",
+        evidence_bytes=evidence,
+    )
+
+    fm = frontmatter(files["reports/brief.md"])
+    assert fm["description"] == (
+        "A deterministic reproduction path exists using pinned artifacts and "
+        "explicit evaluation settings."
+    )
+    assert metadata["citation_count"] == 0

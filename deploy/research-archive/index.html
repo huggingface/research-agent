@@ -321,16 +321,19 @@
     .file-size { color: var(--muted); font-size: 9px; }
     .evidence { max-width: 1120px; }
     .evidence-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
-    .evidence-head h2 { margin: 4px 0 8px; font-size: 28px; }
+    .evidence-head h2 { max-width: 860px; margin: 4px 0 8px; font-size: 28px; line-height: 1.16; overflow-wrap: anywhere; }
     .evidence-head p { max-width: 760px; margin: 0; color: var(--soft); line-height: 1.55; }
-    .evidence-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .evidence-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px; margin-bottom: 18px; }
     .evidence-metric { padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper-2); }
     .evidence-metric strong { display: block; margin-top: 6px; font-size: 17px; }
-    .evidence-filters { display: grid; grid-template-columns: minmax(180px, 1fr) 170px 170px; gap: 10px; margin: 18px 0; }
+    .evidence-filters { display: grid; grid-template-columns: minmax(180px, 1fr) 190px 170px; gap: 10px; margin: 18px 0; }
     .evidence-filters input, .evidence-filters select { min-height: 38px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--text); }
-    .diagnostics { display: grid; gap: 8px; margin: 14px 0 20px; }
+    .diagnostics { margin: 14px 0 20px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper-2); }
+    .diagnostics summary { padding: 12px 14px; color: var(--soft); cursor: pointer; }
+    .diagnostics-list { display: grid; gap: 8px; padding: 0 12px 12px; }
     .diagnostic { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--soft); font-size: 13px; }
     .diagnostic.error { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); color: var(--danger); }
+    .diagnostic-code { display: block; margin-top: 5px; color: var(--muted); font-family: var(--mono); font-size: 9px; }
     .source-list { display: grid; gap: 10px; }
     .source-card { padding: 15px 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper-2); }
     .source-top { display: flex; align-items: flex-start; gap: 12px; }
@@ -339,6 +342,9 @@
     .source-title a:hover { color: var(--accent); }
     .source-id { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 10px; overflow-wrap: anywhere; }
     .source-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 9px; color: var(--soft); font-size: 12px; }
+    .source-state { padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; }
+    .source-state.present { border-color: color-mix(in srgb, var(--success) 45%, var(--line)); color: var(--success); }
+    .source-state.warning { border-color: color-mix(in srgb, var(--warning) 55%, var(--line)); color: var(--warning); }
     .source-url { margin-top: 8px; color: var(--muted); font-family: var(--mono); font-size: 10px; overflow-wrap: anywhere; }
     .loading { opacity: .6; }
     @media (max-width: 900px) {
@@ -476,6 +482,7 @@
       const run = state.detail;
       if (!run) return;
       const tabs = ["markdown", "html", ...(run.has_okf ? ["evidence"] : []), "files"];
+      document.title = `${run.title}${state.tab === "evidence" ? " — Evidence" : ""} · Research Archive`;
       $("detail").innerHTML = `
         <div class="detail-toolbar">
           <div class="detail-context">
@@ -494,7 +501,11 @@
           </button>`}
         </div>
         <div id="panel" class="panel ${state.tab === "html" ? "html-panel" : ""}"></div>`;
-      document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => { state.tab = button.dataset.tab; renderDetail(); }));
+      document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => {
+        state.tab = button.dataset.tab;
+        renderDetail();
+        requestAnimationFrame(() => $("panel")?.scrollTo({ top: 0 }));
+      }));
       document.querySelector("[data-copy-markdown]")?.addEventListener("click", event => copyMarkdown(event.currentTarget));
       document.querySelector("[data-delete]")?.addEventListener("click", openDeleteDialog);
       renderPanel();
@@ -568,7 +579,10 @@
         $("delete-dialog").close();
         renderRuns();
         if (state.selected) await selectRun(state.selected, false);
-        else $("detail").innerHTML = `<div class="empty"><div><div class="kicker">Research archive</div><p>No research folders remain.</p></div></div>`;
+        else {
+          document.title = "Research Archive";
+          $("detail").innerHTML = `<div class="empty"><div><div class="kicker">Research archive</div><p>No research folders remain.</p></div></div>`;
+        }
       } catch (error) {
         $("delete-error").textContent = error.message;
       } finally {
@@ -597,7 +611,7 @@
           loadEvidence(run.id);
           return;
         }
-        renderEvidence(evidence);
+        renderEvidence(evidence, true);
       } else {
         const files = state.inventories.get(run.id);
         if (!files) {
@@ -611,12 +625,15 @@
       }
     }
 
-    function renderEvidence(evidence) {
+    function renderEvidence(evidence, resetScroll = false) {
       if (!evidence.available) {
         $("panel").innerHTML = `<div class="empty">No OKF evidence bundle was produced.</div>`;
         return;
       }
       const diagnostics = evidence.diagnostics || [];
+      const errorCount = diagnostics.filter(item => item.level === "error").length;
+      const warningCount = diagnostics.filter(item => item.level !== "error").length;
+      const reviewLabel = evidence.trust_tier === "human-reviewed" ? "Human reviewed" : evidence.trust_tier === "machine-confirmed" ? "Machine confirmed" : "Not reviewed";
       const query = state.evidenceQuery.trim().toLowerCase();
       const sources = (evidence.sources || []).filter(source => {
         const matchesQuery = !query || `${source.id} ${source.title} ${source.resource} ${source.author}`.toLowerCase().includes(query);
@@ -630,24 +647,25 @@
             <div>
               <div class="kicker">Open Knowledge Format ${escapeHtml(evidence.version || "")}</div>
               <h2>${escapeHtml(evidence.title || "Evidence")}</h2>
-              <p>${escapeHtml(evidence.description || "Structured provenance for this research report.")}</p>
+              ${evidence.description ? `<p>${escapeHtml(evidence.description)}</p>` : ""}
             </div>
             ${evidence.download_url ? `<a class="toolbar-action" href="${escapeHtml(evidence.download_url)}">Download OKF bundle ↓</a>` : ""}
           </div>
           <div class="evidence-metrics">
             <div class="evidence-metric"><span class="label">Lifecycle</span><strong>${escapeHtml(evidence.status || "unknown")}</strong></div>
-            <div class="evidence-metric"><span class="label">Trust</span><strong>${escapeHtml(evidence.trust_tier || "unverified")}</strong></div>
-            <div class="evidence-metric"><span class="label">Integrity</span><strong>${evidence.integrity ? "verified" : "failed"}</strong></div>
-            <div class="evidence-metric"><span class="label">Sources</span><strong>${escapeHtml(evidence.source_count ?? 0)}</strong></div>
-            <div class="evidence-metric"><span class="label">Link coverage</span><strong>${evidence.coverage_percent == null ? "unknown" : `${escapeHtml(evidence.coverage_percent)}%`}</strong></div>
+            <div class="evidence-metric"><span class="label">Review</span><strong>${escapeHtml(reviewLabel)}</strong></div>
+            <div class="evidence-metric" title="The report, expanded concepts, manifest, and downloaded bundle contain the expected bytes. This does not verify research claims."><span class="label">Bundle integrity</span><strong>${evidence.integrity ? "Matches" : "Failed"}</strong></div>
+            <div class="evidence-metric"><span class="label">Source records</span><strong>${escapeHtml(evidence.source_count ?? 0)}</strong></div>
+            <div class="evidence-metric"><span class="label">In report</span><strong>${escapeHtml(evidence.source_in_report_count ?? 0)} / ${escapeHtml(evidence.source_count ?? 0)}</strong></div>
+            <div class="evidence-metric"><span class="label">Claim-cited</span><strong>${escapeHtml(evidence.formally_cited_source_count ?? 0)} / ${escapeHtml(evidence.source_count ?? 0)}</strong></div>
           </div>
-          ${diagnostics.length ? `<div class="diagnostics">${diagnostics.map(item => `<div class="diagnostic ${item.level === "error" ? "error" : ""}"><strong>${escapeHtml(item.code)}</strong> — ${escapeHtml(item.message)}</div>`).join("")}</div>` : ""}
+          ${diagnostics.length ? `<details class="diagnostics" ${errorCount ? "open" : ""}><summary><strong>Provenance diagnostics</strong> · ${errorCount ? `${errorCount} error${errorCount === 1 ? "" : "s"} · ` : ""}${warningCount} warning${warningCount === 1 ? "" : "s"}</summary><div class="diagnostics-list">${diagnostics.map(item => `<div class="diagnostic ${item.level === "error" ? "error" : ""}">${escapeHtml(item.message)}<span class="diagnostic-code">${escapeHtml(item.code)}</span></div>`).join("")}</div></details>` : ""}
           <div class="evidence-filters">
             <input data-evidence-query type="search" placeholder="Search sources, IDs, authors, URLs…" value="${escapeHtml(state.evidenceQuery)}">
             <select data-evidence-health>
-              <option value="all" ${state.evidenceHealth === "all" ? "selected" : ""}>All source health</option>
-              <option value="healthy" ${state.evidenceHealth === "healthy" ? "selected" : ""}>Healthy</option>
-              <option value="warning" ${state.evidenceHealth === "warning" ? "selected" : ""}>Warnings</option>
+              <option value="all" ${state.evidenceHealth === "all" ? "selected" : ""}>All provenance checks</option>
+              <option value="healthy" ${state.evidenceHealth === "healthy" ? "selected" : ""}>Present and cited</option>
+              <option value="warning" ${state.evidenceHealth === "warning" ? "selected" : ""}>Needs attention</option>
             </select>
             <select data-evidence-citation>
               <option value="all" ${state.evidenceCitation === "all" ? "selected" : ""}>All citations</option>
@@ -662,9 +680,8 @@
                 <div class="source-id">${escapeHtml(source.id)}</div>
               </div>
               <div class="source-meta">
-                <span>${escapeHtml(source.citations)} claim citation${source.citations === 1 ? "" : "s"}</span>
-                <span>${source.in_report ? "linked in canonical report" : "not linked in canonical report"}</span>
-                <span>${escapeHtml(source.health)}</span>
+                <span class="source-state ${source.in_report ? "present" : "warning"}">${source.in_report ? "Present in report" : "Not found in report"}</span>
+                <span class="source-state ${source.cited ? "present" : "warning"}">${escapeHtml(source.citations)} formal claim footnote${source.citations === 1 ? "" : "s"}</span>
                 ${source.author ? `<span>${escapeHtml(source.author)}</span>` : ""}
                 ${source.last_modified ? `<span>source updated ${escapeHtml(source.last_modified)}</span>` : ""}
               </div>
@@ -674,6 +691,7 @@
       document.querySelector("[data-evidence-query]")?.addEventListener("input", event => { state.evidenceQuery = event.target.value; renderEvidence(evidence); });
       document.querySelector("[data-evidence-health]")?.addEventListener("change", event => { state.evidenceHealth = event.target.value; renderEvidence(evidence); });
       document.querySelector("[data-evidence-citation]")?.addEventListener("change", event => { state.evidenceCitation = event.target.value; renderEvidence(evidence); });
+      if (resetScroll) $("panel")?.scrollTo({ top: 0 });
     }
 
     async function loadMarkdown(id) {

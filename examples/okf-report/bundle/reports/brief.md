@@ -1,7 +1,8 @@
 ---
 type: Research Report
 title: OKF Evidence
-description: A research report with structured, claim-level provenance.
+description: This example demonstrates a research report with structured, claim-level
+  provenance.
 tags:
 - research
 status: draft
@@ -17,14 +18,18 @@ sources:
   title: Model Context Protocol
 x_research_agent:
   workspace_id: example-okf-report
-  source_report_sha256: f8a6fb48612865fa62bd70a9982b5808aaf3dca3ae688b375b6895d0856a35ce
+  source_report_sha256: 0978adef8c0a81b06c3079992d5391bbf8d22dfddd8d9e2f601a6128abbca8ef
 ---
 
 # OKF Evidence
 
-The [Hugging Face Hub](https://huggingface.co/)[^hugging-face-hub] hosts the researched artifacts.
+## Summary
 
-The [Model Context Protocol](https://modelcontextprotocol.io/)[^model-context-protocol] defines the interoperability layer.
+This example demonstrates a research report with structured, claim-level provenance.
+
+The [Hugging Face Hub](https://huggingface.co/) hosts the researched artifacts.[^hugging-face-hub]
+
+The [Model Context Protocol](https://modelcontextprotocol.io/) defines the interoperability layer.[^model-context-protocol]
 
 [^hugging-face-hub]: [Hugging Face Hub](https://huggingface.co/)
 [^model-context-protocol]: [Model Context Protocol](https://modelcontextprotocol.io/)

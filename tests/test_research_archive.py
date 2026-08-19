@@ -124,11 +124,14 @@ def replace_okf_member(run: Path, member: str, content: bytes) -> None:
 def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
     module = load_archive_module()
     run = tmp_path / "26-07-22-client-success-rates-a123"
+    report = (
+        "# Client Success Rates\n\n"
+        "[Source](https://huggingface.co/)[^hf-source]\n\n"
+        "[^hf-source]: [Hugging Face](https://huggingface.co/)"
+    )
     (run / "output" / "assets").mkdir(parents=True)
     (run / "scratch" / "research").mkdir(parents=True)
-    (run / "output" / "report.md").write_text(
-        "# Client Success Rates\n\n[Source](https://huggingface.co/)"
-    )
+    (run / "output" / "report.md").write_text(report)
     (run / "output" / "report.html").write_text("<!doctype html><html></html>")
     (run / "output" / "assets" / "chart.svg").write_text("<svg></svg>")
     (run / "scratch" / "research" / "manifest.json").write_text(
@@ -137,10 +140,7 @@ def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
     (run / "scratch" / ".workspace.json").write_text(
         json.dumps({"checked_at": "2026-07-22T12:30:00+00:00"})
     )
-    write_okf_bundle(
-        run,
-        "# Client Success Rates\n\n[Source](https://huggingface.co/)",
-    )
+    write_okf_bundle(run, report)
 
     archive = module.ResearchArchive(tmp_path)
     summaries = archive.list_runs()
@@ -157,9 +157,7 @@ def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
     assert detail["has_markdown"]
     assert detail["has_html"]
     assert detail["has_okf"]
-    assert detail["markdown"] == (
-        "# Client Success Rates\n\n[Source](https://huggingface.co/)"
-    )
+    assert detail["markdown"] == report
     assert detail["research_manifest"] == {"stage": "research"}
     assert 'href="https://huggingface.co/"' in detail["markdown_html"]
     assert "files" not in detail
@@ -183,11 +181,135 @@ def test_archive_indexes_reports_and_artifacts(tmp_path: Path) -> None:
     assert payload["report_integrity"]
     assert payload["source_count"] == 1
     assert payload["coverage_percent"] == 100
+    assert payload["source_in_report_count"] == 1
+    assert payload["formally_cited_source_count"] == 1
+    assert payload["formal_claim_citation_count"] == 1
+    assert payload["citation_coverage_percent"] == 100
     assert payload["sources"][0]["id"] == "hf-source"
     assert payload["sources"][0]["health"] == "healthy"
     download = client.get(payload["download_url"])
     assert download.status_code == 200
     assert download.headers["content-disposition"].startswith("attachment;")
+
+
+def test_archive_separates_source_presence_from_formal_citations(
+    tmp_path: Path,
+) -> None:
+    module = load_archive_module()
+    run = tmp_path / "26-08-19-deterministic-timespot-vlm-97bb"
+    (run / "output").mkdir(parents=True)
+    sources = [
+        {
+            "id": f"timespot-source-{index}",
+            "resource": f"https://example.test/source-{index}",
+            "title": f"TimeSpot source {index}",
+        }
+        for index in range(1, 9)
+    ]
+    definitions = "\n".join(
+        f"[^{source['id']}]: {source['resource']}" for source in sources
+    )
+    table = "\n".join(
+        f"| {source['title']} | {source['resource']} |" for source in sources
+    )
+    report = (
+        "# Deterministic TimeSpot VLM Reproduction\n\n"
+        "## TL;DR\n\n"
+        "TimeSpot can be reproduced deterministically with pinned model, "
+        "dataset, adapter, and evaluation revisions.\n\n"
+        "## Artifact registry\n\n"
+        "| Artifact | URL |\n|---|---|\n"
+        f"{table}\n\n"
+        "Definitions alone are not claim citations.\n\n"
+        f"{definitions}\n\n"
+        "`A code token is not a citation.[^timespot-source-1]`\n\n"
+        "| Navigation | [^timespot-source-2] |\n"
+        "|---|---|\n\n"
+        "Navigation | [^timespot-source-2]\n\n"
+        "<!-- [^timespot-source-3] -->\n\n"
+        "Text <span>Raw HTML.[^timespot-source-4]</span>\n\n"
+        "<div>\nRaw HTML block.[^timespot-source-5]\n</div>\n"
+    )
+    (run / "output" / "report.md").write_text(report)
+    files, metadata = build_okf_files(
+        report,
+        title="Deterministic TimeSpot VLM Reproduction",
+        description="Research request: use https://example.test/raw/request",
+        workspace_id=run.name,
+        report_sha256=hashlib.sha256(report.encode()).hexdigest(),
+        evidence_bytes=json.dumps(
+            {"schema_version": 1, "sources": sources}
+        ).encode(),
+        generated_at=datetime(2026, 8, 19, 12, tzinfo=UTC),
+    )
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path, content in files.items():
+            archive.writestr(path, content)
+            destination = run / "output" / "okf" / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+    bundle = output.getvalue()
+    (run / "output" / "okf.zip").write_bytes(bundle)
+    manifest = {
+        "schema_version": 1,
+        "stage": "knowledge",
+        "status": "complete",
+        "okf_version": "0.2",
+        "source_report_sha256": metadata["report_sha256"],
+        "bundle_sha256": hashlib.sha256(bundle).hexdigest(),
+        "warnings": metadata["warnings"],
+        "artifacts": [
+            {
+                "path": f"output/okf/{path}",
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+            for path, content in files.items()
+        ]
+        + [
+            {
+                "path": "output/okf.zip",
+                "sha256": hashlib.sha256(bundle).hexdigest(),
+            }
+        ],
+    }
+    manifest_path = run / "scratch" / "knowledge" / "manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(json.dumps(manifest))
+
+    payload = TestClient(module.create_app(tmp_path)).get(
+        f"/api/runs/{run.name}/evidence"
+    ).json()
+
+    assert payload["valid"]
+    assert payload["description"] == (
+        "TimeSpot can be reproduced deterministically with pinned model, "
+        "dataset, adapter, and evaluation revisions."
+    )
+    assert payload["source_count"] == 8
+    assert payload["source_in_report_count"] == 8
+    assert payload["source_presence_percent"] == 100
+    assert payload["report_link_count"] == 8
+    assert payload["registered_report_link_count"] == 8
+    assert payload["formal_claim_citation_count"] == 0
+    assert payload["formally_cited_source_count"] == 0
+    assert payload["citation_coverage_percent"] == 0
+    assert all(source["in_report"] for source in payload["sources"])
+    assert all(not source["cited"] for source in payload["sources"])
+    assert [
+        item["code"]
+        for item in payload["diagnostics"]
+        if item["code"] == "uncited-source"
+    ] == ["uncited-source"]
+    assert not any(
+        item["code"] == "source-not-in-report"
+        for item in payload["diagnostics"]
+    )
+    assert "8 source records have no formal claim footnote" in next(
+        item["message"]
+        for item in payload["diagnostics"]
+        if item["code"] == "uncited-source"
+    )
 
 
 def test_archive_reports_invalid_okf_without_rendering_untrusted_data(
@@ -692,7 +814,14 @@ def test_archive_serves_hub_classic_shell_and_logo(tmp_path: Path) -> None:
     assert '...(run.has_okf ? ["evidence"] : [])' in page.text
     assert 'fetch(`/api/runs/${encodeURIComponent(id)}/evidence`)' in page.text
     assert "Download OKF bundle" in page.text
-    assert "All source health" in page.text
+    assert "All provenance checks" in page.text
+    assert "Bundle integrity" in page.text
+    assert "Source records" in page.text
+    assert "In report" in page.text
+    assert "Claim-cited" in page.text
+    assert "Link coverage" not in page.text
+    assert '<details class="diagnostics"' in page.text
+    assert 'document.title = "Research Archive"' in page.text
     assert 'fileUrl(id, "output/report.html")' in page.text
     assert 'fetch(`/api/runs/${encodeURIComponent(id)}/markdown`)' in page.text
     assert 'fetch(`/api/runs/${encodeURIComponent(id)}/files`)' in page.text

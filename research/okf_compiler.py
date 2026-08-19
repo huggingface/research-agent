@@ -32,13 +32,20 @@ SOURCE_ID = re.compile(r"^[a-z][a-z0-9._-]{1,63}$")
 HEADING = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 LINK = re.compile(r"(?<!!)\[([^\]\n]+)\]\((https?://[^)\s]+)\)")
 AUTOLINK = re.compile(r"<(https?://[^>\s]+)>")
+BARE_URL = re.compile(r"https?://[^\s<>\]\"'`]+")
 FOOTNOTE_REF = re.compile(r"\[\^([A-Za-z][A-Za-z0-9._-]{1,63})\]")
-FOOTNOTE_DEF = re.compile(r"^\[\^([A-Za-z][A-Za-z0-9._-]{1,63})\]:", re.MULTILINE)
+FOOTNOTE_DEF = re.compile(
+    r"^\s{0,3}\[\^([A-Za-z][A-Za-z0-9._-]{1,63})\]:",
+    re.MULTILINE,
+)
 FOOTNOTE_LINK = re.compile(
-    r"^\[\^([A-Za-z][A-Za-z0-9._-]{1,63})\]:\s*"
+    r"^\s{0,3}\[\^([A-Za-z][A-Za-z0-9._-]{1,63})\]:\s*"
     r"(?:\[([^\]\n]+)\]\((https?://[^)\s]+)\)|(https?://\S+))",
     re.MULTILINE,
 )
+HTML_OPEN = re.compile(r"<([A-Za-z][A-Za-z0-9-]*)(?:\s[^<>]*)?>")
+HTML_TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
+HTML_VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 SENSITIVE_QUERY_KEYS = {
     "access_token",
     "api_key",
@@ -51,6 +58,13 @@ SENSITIVE_QUERY_KEYS = {
     "sig",
     "token",
 }
+SUMMARY_HEADINGS = (
+    "tl;dr",
+    "tldr",
+    "executive summary",
+    "summary",
+    "abstract",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,7 +224,8 @@ def build_okf_files(
     warnings: list[str] = []
     declared = _load_evidence(evidence_bytes, warnings)
     sources = _merge_sources(report, declared, warnings)
-    transformed, cited = _add_source_footnotes(report, sources)
+    transformed = report.rstrip() + "\n"
+    cited = _citation_ids(report)
     source_ids = {source["id"] for source in sources}
     dangling = sorted(cited - source_ids)
     if dangling:
@@ -222,10 +237,11 @@ def build_okf_files(
         warnings.append("Evidence sources not cited in report: " + ", ".join(uncited))
 
     report_title = _report_title(report) or title.strip() or "Research Brief"
+    report_description = _report_description(report, description)
     frontmatter: dict[str, Any] = {
         "type": "Research Report",
         "title": report_title,
-        "description": _one_line(description, 280),
+        "description": report_description,
         "tags": ["research"],
         "status": "draft",
         "generated": {
@@ -260,7 +276,7 @@ def build_okf_files(
         "index.md": _root_index(),
         "reports/index.md": (
             "# Research Report\n\n"
-            f"* [Brief](brief.md) - {_one_line(description, 180)}\n"
+            f"* [Brief](brief.md) - {_truncate(report_description, 180)}\n"
         ).encode(),
         "reports/brief.md": brief,
         "references/index.md": (
@@ -383,6 +399,9 @@ def _external_links(report: str) -> list[tuple[str, str]]:
         for match in AUTOLINK.finditer(visible):
             if resource := _canonical_url(match.group(1)):
                 found.append((resource, resource))
+        bare_text = LINK.sub("", AUTOLINK.sub("", visible))
+        for resource in _bare_urls(bare_text):
+            found.append((resource, resource))
     return found
 
 
@@ -402,16 +421,12 @@ def _footnote_sources(report: str) -> list[dict[str, Any]]:
     return result
 
 
-def _add_source_footnotes(
-    report: str,
-    sources: list[dict[str, Any]],
-) -> tuple[str, set[str]]:
-    by_url = {source["resource"]: source for source in sources}
-    cited = _citation_ids(report)
-    generated: dict[str, dict[str, Any]] = {}
-    output: list[str] = []
+def _citation_ids(report: str) -> set[str]:
+    result: set[str] = set()
     fenced = False
     fence_marker = ""
+    in_comment = False
+    html_block = ""
     for line in report.splitlines():
         stripped = line.lstrip()
         marker = stripped[:3]
@@ -421,60 +436,51 @@ def _add_source_footnotes(
                 fence_marker = marker
             elif marker == fence_marker:
                 fenced = False
-            output.append(line)
+            continue
+        if in_comment:
+            if "-->" in line:
+                in_comment = False
+            continue
+        if html_block:
+            if re.search(rf"</{re.escape(html_block)}\s*>", line, re.IGNORECASE):
+                html_block = ""
             continue
         if fenced or line.startswith(("    ", "\t")) or FOOTNOTE_DEF.match(line):
-            output.append(line)
             continue
-
-        def replace_link(match: re.Match[str]) -> str:
-            resource = _canonical_url(match.group(2))
-            source = by_url.get(resource or "")
-            if source is None:
-                return match.group(0)
-            source_id = source["id"]
-            cited.add(source_id)
-            generated[source_id] = source
-            return f"{match.group(0)}[^{source_id}]"
-
-        def replace_autolink(match: re.Match[str]) -> str:
-            resource = _canonical_url(match.group(1))
-            source = by_url.get(resource or "")
-            if source is None:
-                return match.group(0)
-            source_id = source["id"]
-            cited.add(source_id)
-            generated[source_id] = source
-            return f"{match.group(0)}[^{source_id}]"
-
-        line = _transform_outside_code(line, lambda value: LINK.sub(replace_link, value))
-        line = _transform_outside_code(
-            line,
-            lambda value: AUTOLINK.sub(replace_autolink, value),
-        )
-        output.append(line)
-    existing_definitions = set(FOOTNOTE_DEF.findall(report))
-    definitions = [
-        (
-            f"[^{source_id}]: "
-            f"[{source['title']}]({source['resource']})"
-        )
-        for source_id, source in sorted(generated.items())
-        if source_id not in existing_definitions
-    ]
-    transformed = "\n".join(output).rstrip()
-    if definitions:
-        transformed += "\n\n" + "\n".join(definitions)
-    return transformed + "\n", cited
+        visible = _without_inline_code(line)
+        if "<!--" in visible:
+            before, after = visible.split("<!--", 1)
+            visible = before
+            in_comment = "-->" not in after
+        stripped = visible.strip()
+        opening = HTML_OPEN.search(visible)
+        if opening:
+            tag = opening.group(1).lower()
+            after = visible[opening.end() :]
+            if (
+                tag not in HTML_VOID_TAGS
+                and not opening.group(0).endswith("/>")
+                and not re.search(rf"</{re.escape(tag)}\s*>", after, re.IGNORECASE)
+            ):
+                html_block = tag
+        if (
+            not stripped
+            or stripped.startswith("#")
+            or "|" in stripped
+            or HTML_TAG.search(visible)
+        ):
+            continue
+        result.update(FOOTNOTE_REF.findall(visible))
+    return result
 
 
-def _citation_ids(report: str) -> set[str]:
-    return {
-        source_id
-        for line in report.splitlines()
-        if not FOOTNOTE_DEF.match(line)
-        for source_id in FOOTNOTE_REF.findall(line)
-    }
+def _bare_urls(value: str) -> list[str]:
+    result: list[str] = []
+    for match in BARE_URL.finditer(value):
+        candidate = match.group(0).rstrip(".,;:!?)]}")
+        if resource := _canonical_url(candidate):
+            result.append(resource)
+    return result
 
 
 def _canonical_url(value: object) -> str | None:
@@ -534,6 +540,73 @@ def _report_title(report: str) -> str:
     return _one_line(match.group(1), 180) if match else ""
 
 
+def _report_description(report: str, fallback: str) -> str:
+    lines = report.splitlines()
+    headings: dict[str, int] = {}
+    for index, line in enumerate(lines):
+        match = re.match(r"^#{1,6}\s+(.+?)\s*$", line)
+        if not match:
+            continue
+        name = re.sub(r"[*_`]", "", match.group(1)).strip().lower()
+        headings.setdefault(name, index)
+    for heading in SUMMARY_HEADINGS:
+        if heading not in headings:
+            continue
+        paragraph: list[str] = []
+        for line in lines[headings[heading] + 1 :]:
+            if re.match(r"^#{1,6}\s+", line):
+                break
+            stripped = line.strip()
+            if not stripped:
+                if paragraph:
+                    break
+                continue
+            if stripped.startswith(("|", "```", "~~~", "![", "---")):
+                if paragraph:
+                    break
+                continue
+            paragraph.append(stripped)
+        if paragraph:
+            description = _plain_markdown(" ".join(paragraph))
+            if description:
+                return _truncate(description, 280)
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if (
+            not stripped
+            or stripped.startswith(("#", "|", "```", "~~~", "![", "---", "[^"))
+        ):
+            continue
+        paragraph = [stripped]
+        for continuation in lines[index + 1 :]:
+            continuation = continuation.strip()
+            if not continuation or continuation.startswith("#"):
+                break
+            paragraph.append(continuation)
+        description = _plain_markdown(" ".join(paragraph))
+        if description:
+            return _truncate(description, 280)
+    return _truncate(_one_line(fallback, 1000), 280)
+
+
+def _plain_markdown(value: str) -> str:
+    value = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", value)
+    value = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", value)
+    value = FOOTNOTE_REF.sub("", value)
+    value = re.sub(r"</?[^>]+>", "", value)
+    value = re.sub(r"^[>*+\-\d.)\s]+", "", value)
+    value = value.replace("`", "").replace("*", "").replace("_", "")
+    return _one_line(value, 1000)
+
+
+def _truncate(value: str, limit: int) -> str:
+    value = _one_line(value, max(limit * 4, limit))
+    if len(value) <= limit:
+        return value
+    shortened = value[: limit - 1].rsplit(" ", 1)[0].rstrip(".,;:")
+    return f"{shortened or value[: limit - 1]}…"
+
+
 def _one_line(value: object, limit: int) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
 
@@ -541,14 +614,6 @@ def _one_line(value: object, limit: int) -> str:
 def _without_inline_code(line: str) -> str:
     parts = line.split("`")
     return "".join(part if index % 2 == 0 else " " * len(part) for index, part in enumerate(parts))
-
-
-def _transform_outside_code(line: str, transform: Callable[[str], str]) -> str:
-    parts = line.split("`")
-    return "`".join(
-        transform(part) if index % 2 == 0 else part
-        for index, part in enumerate(parts)
-    )
 
 
 def _timestamp(value: datetime) -> str:

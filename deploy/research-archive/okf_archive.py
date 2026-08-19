@@ -20,9 +20,13 @@ MAX_SOURCES = 256
 MAX_ARCHIVE_MEMBERS = 64
 SOURCE_ID = re.compile(r"^[a-z][a-z0-9._-]{1,63}$")
 FOOTNOTE_REF = re.compile(r"\[\^([A-Za-z][A-Za-z0-9._-]{1,63})\]")
-FOOTNOTE_DEF = re.compile(r"^\[\^([A-Za-z][A-Za-z0-9._-]{1,63})\]:")
+FOOTNOTE_DEF = re.compile(r"^\s{0,3}\[\^([A-Za-z][A-Za-z0-9._-]{1,63})\]:")
 LINK = re.compile(r"(?<!!)\[[^\]\n]+\]\((https?://[^)\s]+)\)")
 AUTOLINK = re.compile(r"<(https?://[^>\s]+)>")
+BARE_URL = re.compile(r"https?://[^\s<>\]\"'`]+")
+HTML_OPEN = re.compile(r"<([A-Za-z][A-Za-z0-9-]*)(?:\s[^<>]*)?>")
+HTML_TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
+HTML_VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 SENSITIVE_QUERY_KEYS = {
     "access_token",
     "api_key",
@@ -159,10 +163,12 @@ def inspect_okf(
     if len(source_values) > MAX_SOURCES:
         raise OkfArchiveError("OKF source count exceeds the archive limit")
 
-    citation_counts = _citation_counts(body)
+    citation_counts = _citation_counts(report)
     report_urls = set(_external_urls(report))
     seen_ids: set[str] = set()
     sources: list[dict[str, Any]] = []
+    uncited_source_ids: list[str] = []
+    missing_report_source_ids: list[str] = []
     for raw in source_values:
         if not isinstance(raw, dict):
             diagnostics.append(
@@ -197,21 +203,9 @@ def inspect_okf(
         in_report = resource in report_urls
         health = "healthy" if citations and in_report else "warning"
         if not citations:
-            diagnostics.append(
-                _diagnostic(
-                    "warning",
-                    "uncited-source",
-                    f"Source {source_id} is declared but has no claim citation.",
-                )
-            )
+            uncited_source_ids.append(source_id)
         if not in_report:
-            diagnostics.append(
-                _diagnostic(
-                    "warning",
-                    "source-not-in-report",
-                    f"Source {source_id} is not linked by the canonical report.",
-                )
-            )
+            missing_report_source_ids.append(source_id)
         sources.append(
             {
                 "id": source_id,
@@ -226,13 +220,41 @@ def inspect_okf(
             }
         )
 
+    if uncited_source_ids:
+        diagnostics.append(
+            _diagnostic(
+                "warning",
+                "uncited-source",
+                (
+                    f"{_counted(len(uncited_source_ids), 'source record')} "
+                    f"{'has' if len(uncited_source_ids) == 1 else 'have'} no formal "
+                    f"claim footnote: {_summarize(uncited_source_ids)}."
+                ),
+            )
+        )
+    if missing_report_source_ids:
+        diagnostics.append(
+            _diagnostic(
+                "warning",
+                "source-not-in-report",
+                (
+                    f"{_counted(len(missing_report_source_ids), 'source record')} "
+                    f"{'is' if len(missing_report_source_ids) == 1 else 'are'} not "
+                    "represented by an external URL in the canonical report: "
+                    f"{_summarize(missing_report_source_ids)}."
+                ),
+            )
+        )
     dangling = sorted(set(citation_counts) - seen_ids)
-    for source_id in dangling:
+    if dangling:
         diagnostics.append(
             _diagnostic(
                 "error",
                 "unresolved-citation",
-                f"Claim citation {source_id} has no matching source record.",
+                (
+                    f"{len(dangling)} formal claim footnote(s) have no matching "
+                    f"source record: {_summarize(dangling)}."
+                ),
             )
         )
     source_urls = {source["resource"] for source in sources}
@@ -254,6 +276,10 @@ def inspect_okf(
             _diagnostic("warning", "compiler-warning", _one_line(item, 240))
             for item in compiler_warnings[:50]
             if _one_line(item, 240)
+            and not (
+                uncited_source_ids
+                and str(item).startswith("Evidence sources not cited in report:")
+            )
         )
 
     generated = frontmatter.get("generated")
@@ -317,10 +343,19 @@ def inspect_okf(
         stale_after
         and (today or datetime.now(UTC).date()) >= date.fromisoformat(stale_after)
     )
+    registered_report_links = report_urls & source_urls
     coverage = (
-        round(100 * len(report_urls & source_urls) / len(report_urls))
+        round(100 * len(registered_report_links) / len(report_urls))
         if report_urls
         else None
+    )
+    source_in_report_count = sum(source["in_report"] for source in sources)
+    formally_cited_source_count = sum(source["cited"] for source in sources)
+    source_presence_percent = (
+        round(100 * source_in_report_count / len(sources)) if sources else None
+    )
+    citation_coverage_percent = (
+        round(100 * formally_cited_source_count / len(sources)) if sources else None
     )
     status = str(frontmatter.get("status") or "stable")
     if status not in {"draft", "stable", "deprecated"}:
@@ -361,10 +396,17 @@ def inspect_okf(
         "report_sha256": _one_line(release.get("source_report_sha256"), 64),
         "source_count": len(sources),
         "citation_count": sum(source["citations"] for source in sources),
+        "formal_claim_citation_count": sum(citation_counts.values()),
+        "formally_cited_source_count": formally_cited_source_count,
+        "citation_coverage_percent": citation_coverage_percent,
+        "report_link_count": len(report_urls),
+        "registered_report_link_count": len(registered_report_links),
+        "source_in_report_count": source_in_report_count,
+        "source_presence_percent": source_presence_percent,
         "coverage_percent": coverage,
         "unmatched_report_urls": unmatched_report_urls[:50],
         "sources": sources,
-        "diagnostics": diagnostics[:100],
+        "diagnostics": _dedupe_diagnostics(diagnostics)[:100],
     }
 
 
@@ -485,10 +527,54 @@ def _strict_json(content: bytes) -> Any:
 
 def _citation_counts(body: str) -> dict[str, int]:
     result: dict[str, int] = {}
+    fenced = False
+    fence_marker = ""
+    in_comment = False
+    html_block = ""
     for line in body.splitlines():
-        if FOOTNOTE_DEF.match(line):
+        stripped = line.lstrip()
+        marker = stripped[:3]
+        if marker in {"```", "~~~"}:
+            if not fenced:
+                fenced = True
+                fence_marker = marker
+            elif marker == fence_marker:
+                fenced = False
             continue
-        for source_id in FOOTNOTE_REF.findall(line):
+        if in_comment:
+            if "-->" in line:
+                in_comment = False
+            continue
+        if html_block:
+            if re.search(rf"</{re.escape(html_block)}\s*>", line, re.IGNORECASE):
+                html_block = ""
+            continue
+        if fenced or line.startswith(("    ", "\t")) or FOOTNOTE_DEF.match(line):
+            continue
+        visible = _without_inline_code(line)
+        if "<!--" in visible:
+            before, after = visible.split("<!--", 1)
+            visible = before
+            in_comment = "-->" not in after
+        stripped = visible.strip()
+        opening = HTML_OPEN.search(visible)
+        if opening:
+            tag = opening.group(1).lower()
+            after = visible[opening.end() :]
+            if (
+                tag not in HTML_VOID_TAGS
+                and not opening.group(0).endswith("/>")
+                and not re.search(rf"</{re.escape(tag)}\s*>", after, re.IGNORECASE)
+            ):
+                html_block = tag
+        if (
+            not stripped
+            or stripped.startswith("#")
+            or "|" in stripped
+            or HTML_TAG.search(visible)
+        ):
+            continue
+        for source_id in FOOTNOTE_REF.findall(visible):
             result[source_id] = result.get(source_id, 0) + 1
     return result
 
@@ -509,13 +595,27 @@ def _external_urls(markdown: str) -> list[str]:
             continue
         if fenced or line.startswith(("    ", "\t")):
             continue
-        for match in LINK.finditer(line):
+        visible = _without_inline_code(line)
+        for match in LINK.finditer(visible):
             if value := _canonical_url(match.group(1)):
                 result.append(value)
-        for match in AUTOLINK.finditer(line):
+        for match in AUTOLINK.finditer(visible):
             if value := _canonical_url(match.group(1)):
+                result.append(value)
+        bare_text = LINK.sub("", AUTOLINK.sub("", visible))
+        for match in BARE_URL.finditer(bare_text):
+            candidate = match.group(0).rstrip(".,;:!?)]}")
+            if value := _canonical_url(candidate):
                 result.append(value)
     return result
+
+
+def _without_inline_code(line: str) -> str:
+    parts = line.split("`")
+    return "".join(
+        part if index % 2 == 0 else " " * len(part)
+        for index, part in enumerate(parts)
+    )
 
 
 def _canonical_url(value: object) -> str | None:
@@ -596,3 +696,27 @@ def _one_line(value: object, limit: int) -> str:
 
 def _diagnostic(level: str, code: str, message: str) -> dict[str, str]:
     return {"level": level, "code": code, "message": message}
+
+
+def _summarize(values: list[str], limit: int = 6) -> str:
+    shown = ", ".join(values[:limit])
+    remaining = len(values) - limit
+    return f"{shown}, and {remaining} more" if remaining > 0 else shown
+
+
+def _counted(count: int, singular: str) -> str:
+    return f"{count} {singular if count == 1 else singular + 's'}"
+
+
+def _dedupe_diagnostics(
+    diagnostics: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in diagnostics:
+        key = (item["level"], item["code"], item["message"])
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result

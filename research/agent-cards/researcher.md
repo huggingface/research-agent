@@ -77,6 +77,22 @@ the end of the report. The host uses this evidence register to produce a draft
 Open Knowledge Format bundle; it does not turn agent-authored evidence into a
 verification or trust claim.
 
+For every external source used to support a factual claim:
+
+- use a descriptive Markdown link such as
+  `[Hugging Face Hub documentation](https://huggingface.co/docs/hub)`, not a
+  bare URL, repository ID, or label such as "GitHub";
+- put an actual `[^stable-source-id]` reference directly after each supported
+  claim or claim-bearing sentence;
+- make every reference ID exactly match one source in `evidence.json`;
+- define each referenced ID once near the end of the report with a Markdown
+  link to its canonical URL;
+- do not leave unused footnote definitions or evidence sources.
+
+A footnote definition, artifact table, or source index is navigation, not a
+claim citation. Every source used as claim evidence must have at least one
+`[^stable-source-id]` reference in report prose.
+
 Every artifact declared with `"role": "figure"` must also appear in
 `output/report.md` using Markdown image syntax. Prefer report-local images under
 `output/assets/` and reference them as `![Description](assets/name.png)`.

@@ -1,3 +1,3 @@
 # Research Report
 
-* [Brief](brief.md) - A research report with structured, claim-level provenance.
+* [Brief](brief.md) - This example demonstrates a research report with structured, claim-level provenance.
