@@ -1,6 +1,7 @@
 default_model: $system.research
 llm_retries: 5
 git_aware: true
+session_history_window: 0
 
 logger:
   type: console
@@ -19,7 +20,7 @@ mcp:
       description: Hugging Face MCP server
       transport: http
       url: https://huggingface.co/mcp?bouquet=research
-      read_timeout_seconds: 30
+      read_timeout_seconds: 90
       include_instructions: false
       auth:
         forward: huggingface
