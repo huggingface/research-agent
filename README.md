@@ -196,6 +196,20 @@ uv run --prerelease=allow \
   python harness_chat.py
 ```
 
+Run one UTF-8 prompt file and export its response, persisted session, ATIF
+trajectory, and machine-readable usage summary:
+
+```bash
+uv run --prerelease=allow \
+  --with 'fast-agent-mcp==0.10.9' \
+  python harness_run.py prompt.md
+```
+
+Each run writes `.artifacts/local-runs/<session-id>/summary.json`. Provider
+reported `cost_usd` remains `null` when unavailable; it is never treated as
+zero. This direct Harness path accounts for the Researcher invocation but does
+not run the MCP App's separate HTML-generation stage.
+
 ### Run one request
 
 ```bash
