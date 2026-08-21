@@ -39,11 +39,6 @@ FOOTNOTE_DEF = re.compile(
     r"^\s{0,3}\[\^([A-Za-z][A-Za-z0-9._-]{1,63})\]:",
     re.MULTILINE,
 )
-FOOTNOTE_LINK = re.compile(
-    r"^\s{0,3}\[\^([A-Za-z][A-Za-z0-9._-]{1,63})\]:\s*"
-    r"(?:\[([^\]\n]+)\]\((https?://[^)\s]+)\)|(https?://\S+))",
-    re.MULTILINE,
-)
 HTML_OPEN = re.compile(r"<([A-Za-z][A-Za-z0-9-]*)(?:\s[^<>]*)?>")
 HTML_TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
 HTML_VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
@@ -417,15 +412,22 @@ def _external_links(report: str) -> list[tuple[str, str]]:
 
 def _footnote_sources(report: str) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
-    for match in FOOTNOTE_LINK.finditer(report):
-        resource = _canonical_url(match.group(3) or match.group(4))
-        if resource is None:
+    for match in FOOTNOTE_DEF.finditer(report):
+        tail = report[match.end() :].splitlines()
+        body = [tail[0] if tail else ""]
+        for line in tail[1:]:
+            if not line.startswith(("    ", "\t")):
+                break
+            body.append(line[4:] if line.startswith("    ") else line[1:])
+        links = _external_links("\n".join(body))
+        if not links:
             continue
+        title, resource = links[0]
         result.append(
             {
                 "id": _safe_source_id(match.group(1), resource),
                 "resource": resource,
-                "title": _source_title(match.group(2), resource),
+                "title": _source_title(title, resource),
             }
         )
     return result

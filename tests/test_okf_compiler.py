@@ -230,6 +230,38 @@ def test_preserves_existing_stable_source_footnotes() -> None:
     assert not any("not cited" in warning for warning in metadata["warnings"])
 
 
+def test_preserves_footnote_ids_when_prose_precedes_source_url() -> None:
+    report = (
+        "# Report\n\n"
+        "Linked claim.[^linked] Bare claim.[^bare]\n\n"
+        "[^linked]: Authors and context — "
+        "[Canonical source](https://example.test/linked)\n"
+        "[^bare]: Authors and context https://example.test/bare\n"
+        "[^continued]: Source details\n"
+        "    https://example.test/continued\n"
+    )
+
+    files, metadata = build_okf_files(
+        report,
+        title="Report",
+        description="Description",
+        workspace_id="run",
+        report_sha256="digest",
+    )
+
+    sources = frontmatter(files["reports/brief.md"])["sources"]
+    assert {source["id"]: source["resource"] for source in sources} == {
+        "bare": "https://example.test/bare",
+        "continued": "https://example.test/continued",
+        "linked": "https://example.test/linked",
+    }
+    assert metadata["citation_count"] == 2
+    assert not any(
+        "unresolved evidence footnotes" in warning
+        for warning in metadata["warnings"]
+    )
+
+
 def test_reordering_links_does_not_change_generated_source_ids() -> None:
     kwargs = {
         "title": "Report",
