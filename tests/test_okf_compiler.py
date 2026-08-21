@@ -163,6 +163,45 @@ def test_falls_back_to_external_links_when_evidence_is_invalid() -> None:
     assert any("invalid JSON" in warning for warning in metadata["warnings"])
 
 
+def test_replaces_generic_source_titles_with_canonical_urls() -> None:
+    report = (
+        "# Report\n\n"
+        "[HTTPS](https://example.test/external)\n\n"
+        "A claim.[^footnote]\n\n"
+        "[^footnote]: [URI](https://example.test/footnote)\n\n"
+        "[HTTPS documentation](https://example.test/documentation)\n"
+    )
+    evidence = json.dumps(
+        {
+            "schema_version": 1,
+            "sources": [
+                {
+                    "id": "declared",
+                    "resource": "https://example.test/declared",
+                    "title": "URL",
+                }
+            ],
+        }
+    ).encode()
+
+    files, _ = build_okf_files(
+        report,
+        title="Report",
+        description="Description",
+        workspace_id="run",
+        report_sha256="digest",
+        evidence_bytes=evidence,
+    )
+
+    sources = frontmatter(files["reports/brief.md"])["sources"]
+    assert {source["resource"]: source["title"] for source in sources} == {
+        "https://example.test/declared": "https://example.test/declared",
+        "https://example.test/documentation": "HTTPS documentation",
+        "https://example.test/external": "https://example.test/external",
+        "https://example.test/footnote": "https://example.test/footnote",
+    }
+
+
 def test_preserves_existing_stable_source_footnotes() -> None:
     report = (
         "# Report\n\n"

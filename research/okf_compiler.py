@@ -330,7 +330,7 @@ def _load_evidence(
         source: dict[str, Any] = {
             "id": _safe_source_id(raw.get("id"), resource),
             "resource": resource,
-            "title": _one_line(raw.get("title") or resource, 180),
+            "title": _source_title(raw.get("title"), resource),
         }
         author = _one_line(raw.get("author"), 100)
         if author:
@@ -366,7 +366,7 @@ def _merge_sources(
             {
                 "id": _source_id(resource),
                 "resource": resource,
-                "title": _one_line(label or resource, 180),
+                "title": _source_title(label, resource),
             },
         )
     sources = sorted(by_url.values(), key=lambda item: (item["id"], item["resource"]))
@@ -415,7 +415,7 @@ def _footnote_sources(report: str) -> list[dict[str, Any]]:
             {
                 "id": _safe_source_id(match.group(1), resource),
                 "resource": resource,
-                "title": _one_line(match.group(2) or resource, 180),
+                "title": _source_title(match.group(2), resource),
             }
         )
     return result
@@ -533,6 +533,16 @@ def _safe_source_id(value: object, resource: str) -> str:
 
 def _source_id(resource: str) -> str:
     return f"src-{hashlib.sha256(resource.encode()).hexdigest()[:16]}"
+
+
+def _source_title(value: object, resource: str) -> str:
+    title = _one_line(value, 180)
+    generic = re.sub(r"[^a-z]", "", title.casefold())
+    return (
+        resource
+        if generic in {"", "http", "https", "url", "uri", "httpurl", "httpsurl"}
+        else title
+    )
 
 
 def _report_title(report: str) -> str:

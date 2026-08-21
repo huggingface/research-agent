@@ -312,6 +312,29 @@ def test_archive_separates_source_presence_from_formal_citations(
     )
 
 
+def test_archive_replaces_legacy_generic_source_title(tmp_path: Path) -> None:
+    module = load_archive_module()
+    run = tmp_path / "26-08-21-generic-source-title-a123"
+    (run / "output").mkdir(parents=True)
+    report = "# Report\n\n[Hugging Face](https://huggingface.co/)"
+    (run / "output" / "report.md").write_text(report)
+    write_okf_bundle(run, report)
+    brief_path = run / "output" / "okf" / "reports" / "brief.md"
+    brief = brief_path.read_bytes().replace(
+        b"title: Hugging Face",
+        b"title: HTTPS",
+        1,
+    )
+    replace_okf_member(run, "reports/brief.md", brief)
+
+    payload = TestClient(module.create_app(tmp_path)).get(
+        f"/api/runs/{run.name}/evidence"
+    ).json()
+
+    assert payload["valid"]
+    assert payload["sources"][0]["title"] == "https://huggingface.co/"
+
+
 def test_archive_reports_invalid_okf_without_rendering_untrusted_data(
     tmp_path: Path,
 ) -> None:

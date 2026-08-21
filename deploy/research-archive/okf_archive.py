@@ -72,7 +72,7 @@ def inspect_okf(
     version = str(root_frontmatter.get("okf_version") or "")
     if version != "0.2":
         raise OkfArchiveError(f"Unsupported OKF version: {version or 'missing'}")
-    frontmatter, body = _parse_frontmatter(brief)
+    frontmatter, _body = _parse_frontmatter(brief)
     concept_type = str(frontmatter.get("type") or "").strip()
     if not concept_type:
         raise OkfArchiveError("OKF report concept has no type")
@@ -209,7 +209,7 @@ def inspect_okf(
         sources.append(
             {
                 "id": source_id,
-                "title": _one_line(raw.get("title") or resource, 180),
+                "title": _source_title(raw.get("title"), resource),
                 "resource": resource,
                 "author": _one_line(raw.get("author"), 100),
                 "last_modified": _date_string(raw.get("last_modified")),
@@ -475,6 +475,16 @@ def _safe_member(value: str) -> bool:
         and "\x00" not in value
         and not path.is_absolute()
         and all(part not in {"", ".", ".."} for part in path.parts)
+    )
+
+
+def _source_title(value: object, resource: str) -> str:
+    title = _one_line(value, 180)
+    generic = re.sub(r"[^a-z]", "", title.casefold())
+    return (
+        resource
+        if generic in {"", "http", "https", "url", "uri", "httpurl", "httpsurl"}
+        else title
     )
 
 
