@@ -702,6 +702,28 @@ def test_markerless_run_uses_direct_report_timestamp(tmp_path: Path) -> None:
     assert summary.updated_at == "2026-07-20T12:00:00+00:00"
 
 
+def test_archive_orders_date_prefixed_runs_newest_first(tmp_path: Path) -> None:
+    module = load_archive_module()
+    old = tmp_path / "26-07-22-old-a123"
+    new = tmp_path / "26-08-21-new-b456"
+    old_report = old / "output" / "report.md"
+    new_report = new / "output" / "report.md"
+    old_report.parent.mkdir(parents=True)
+    new_report.parent.mkdir(parents=True)
+    old_report.write_text("# Old")
+    new_report.write_text("# New")
+    old_time = datetime(2026, 8, 21, 12, tzinfo=UTC).timestamp()
+    new_time = datetime(2026, 7, 22, 12, tzinfo=UTC).timestamp()
+    for path, timestamp in ((old, old_time), (old_report, old_time)):
+        os.utime(path, (timestamp, timestamp))
+    for path, timestamp in ((new, new_time), (new_report, new_time)):
+        os.utime(path, (timestamp, timestamp))
+
+    runs = module.ResearchArchive(tmp_path).list_runs()
+
+    assert [run.id for run in runs] == [new.name, old.name]
+
+
 def test_archive_deletes_only_a_valid_run(tmp_path: Path) -> None:
     module = load_archive_module()
     run = tmp_path / "26-07-22-delete-me-a123"

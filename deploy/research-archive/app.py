@@ -198,7 +198,11 @@ class ResearchArchive:
                 and SAFE_SEGMENT.fullmatch(path.name)
             )
         ]
-        return sorted(runs, key=lambda run: run.updated_at, reverse=True)
+        return sorted(
+            runs,
+            key=lambda run: (run.date, run.updated_at, run.id),
+            reverse=True,
+        )
 
     def summarize(self, run: Path) -> RunSummary:
         markdown_path = self._direct_file(run, run / "output" / "report.md")
