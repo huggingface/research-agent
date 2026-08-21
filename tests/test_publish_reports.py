@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
+import json
 import sys
+import zipfile
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 
@@ -11,6 +15,16 @@ import pytest
 def load_module():
     path = Path(__file__).parents[1] / "scripts" / "publish_reports.py"
     spec = importlib.util.spec_from_file_location("publish_reports", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_okf_archive():
+    path = Path(__file__).parents[1] / "deploy" / "research-archive" / "okf_archive.py"
+    spec = importlib.util.spec_from_file_location("public_okf_archive", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -61,6 +75,20 @@ class BatchApiSimulator:
 
     def batch_bucket_files(self, bucket_id, **kwargs):
         self.calls.append((bucket_id, kwargs))
+
+
+class ApplyingBatchApiSimulator(BatchApiSimulator):
+    def __init__(self, fs: FileSystemSimulator):
+        super().__init__()
+        self.fs = fs
+
+    def batch_bucket_files(self, bucket_id, **kwargs):
+        super().batch_bucket_files(bucket_id, **kwargs)
+        root = f"buckets/{bucket_id}"
+        for path in kwargs.get("delete", []):
+            self.fs.files.pop(f"{root}/{path}", None)
+        for content, path in kwargs.get("add", []):
+            self.fs.files[f"{root}/{path}"] = content
 
 
 def test_discovery_allows_only_public_report_artifacts() -> None:
@@ -174,6 +202,115 @@ def test_publication_rejects_tokens() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "value, message",
+    [
+        (
+            (
+                "https://huggingface.co/buckets/evalstate%2Fresearch-agent/"
+                "resolve/run-a/scratch/research/evidence.json"
+            ),
+            "private source bucket",
+        ),
+        ("https://user:pass@example.test/private", "URL credentials"),
+        ("https://example.test/private?token=secret", "sensitive URL query"),
+        ("https://example.test/private?%74oken=secret", "sensitive URL query"),
+    ],
+)
+def test_publication_rejects_encoded_private_or_credentialed_urls(
+    value: str,
+    message: str,
+) -> None:
+    module = load_module()
+    source = "buckets/evalstate/research-agent/run-a/output/report.md"
+    fs = FileSystemSimulator({source: f"[Private]({value})".encode()})
+    artifact = module.Artifact("run-a", "output/report.md", source, len(fs.files[source]))
+
+    with pytest.raises(module.PublicationError, match=message):
+        module.public_bytes(
+            fs,
+            artifact,
+            "evalstate/research-agent",
+            "evalstate/public",
+        )
+
+
+@pytest.mark.parametrize(
+    "path, value, message",
+    [
+        (
+            "output/assets/chart.svg",
+            (
+                "<svg><a href=\"https://huggingface.co/buckets/"
+                "evalstate%2Fresearch-agent/private\"></a></svg>"
+            ),
+            "private source bucket",
+        ),
+        (
+            "output/site.css",
+            "body{background:url(https://example.test/a?token=secret)}",
+            "sensitive URL query",
+        ),
+        (
+            "output/site.css",
+            (
+                "body{background:url(https://huggingface.co/buckets/"
+                "evalstate\\2fresearch-agent/private.png)}"
+            ),
+            "private source bucket",
+        ),
+        (
+            "output/site.css",
+            "body{background:url(https://example.test/a?to\\00006ben=secret)}",
+            "sensitive URL query",
+        ),
+        (
+            "output/assets/chart.svg",
+            "<svg><text>hf&#95;abcdefghijklmnopqrstuvwxyz</text></svg>",
+            "Hugging Face token",
+        ),
+    ],
+)
+def test_publication_rejects_private_urls_in_text_media(
+    path: str,
+    value: str,
+    message: str,
+) -> None:
+    module = load_module()
+    source = f"buckets/evalstate/research-agent/run-a/{path}"
+    fs = FileSystemSimulator({source: value.encode()})
+    artifact = module.Artifact("run-a", path, source, len(fs.files[source]))
+
+    with pytest.raises(module.PublicationError, match=message):
+        module.public_bytes(
+            fs,
+            artifact,
+            "evalstate/research-agent",
+            "evalstate/public",
+        )
+
+
+def test_publication_rejects_deeply_encoded_private_bucket() -> None:
+    module = load_module()
+    value = (
+        "https://huggingface.co/buckets/evalstate/research-agent/"
+        "resolve/run-a/private"
+    )
+    for _ in range(12):
+        value = quote(value, safe="")
+    source = "buckets/evalstate/research-agent/run-a/output/report.md"
+    fs = FileSystemSimulator({source: value.encode()})
+    artifact = module.Artifact("run-a", "output/report.md", source, len(fs.files[source]))
+
+    with pytest.raises(module.PublicationError, match="private source bucket"):
+        module.public_bytes(
+            fs,
+            artifact,
+            "evalstate/research-agent",
+            "evalstate/public",
+        )
+
+
 def test_publication_rejects_private_okf_links() -> None:
     module = load_module()
     source = "buckets/evalstate/research-agent/run-a/output/report.md"
@@ -225,6 +362,201 @@ def test_publication_rejects_encoded_private_okf_links(path: str) -> None:
             "evalstate/research-agent",
             "evalstate/public",
         )
+
+
+def test_public_evidence_is_deterministic_safe_and_archive_compatible() -> None:
+    module = load_module()
+    report = (
+        b"# Public Report\n\n"
+        b"A supported claim.[^docs]\n\n"
+        b"[^docs]: [HTTPS](https://example.test/docs)\n"
+    )
+    prepared = [
+        ("run-a", "output/report.md", report),
+        ("run-a", "output/report.html", b"<html></html>"),
+    ]
+
+    first = module.prepare_public_evidence(
+        prepared,
+        "evalstate/research-agent",
+    )
+    second = module.prepare_public_evidence(
+        prepared,
+        "evalstate/research-agent",
+    )
+
+    assert first == second
+    release = {path: content for _, path, content in first}
+    assert set(release) == {
+        "output/okf/index.md",
+        "output/okf/reports/index.md",
+        "output/okf/reports/brief.md",
+        "output/okf/references/index.md",
+        "output/okf/references/evidence.md",
+        "output/okf.zip",
+        "scratch/knowledge/manifest.json",
+    }
+    manifest = json.loads(release["scratch/knowledge/manifest.json"])
+    assert manifest["generated"] == {
+        "by": "research-agent/public-okf-compiler-v1"
+    }
+    assert manifest["source_report_sha256"] == hashlib.sha256(report).hexdigest()
+    assert b"evalstate/research-agent" not in b"".join(release.values())
+    with zipfile.ZipFile(io.BytesIO(release["output/okf.zip"])) as archive:
+        assert set(archive.namelist()) == {
+            path.removeprefix("output/okf/")
+            for path in release
+            if path.startswith("output/okf/")
+        }
+
+    projection = load_okf_archive().inspect_okf(
+        index=release["output/okf/index.md"],
+        brief=release["output/okf/reports/brief.md"],
+        manifest=release["scratch/knowledge/manifest.json"],
+        bundle=release["output/okf.zip"],
+        report=report.decode(),
+        expanded={
+            "reports/index.md": release["output/okf/reports/index.md"],
+            "references/index.md": release["output/okf/references/index.md"],
+            "references/evidence.md": release[
+                "output/okf/references/evidence.md"
+            ],
+        },
+    )
+    assert projection["valid"]
+    assert projection["integrity"]
+    assert projection["report_integrity"]
+    assert projection["archive_integrity"]
+    assert projection["artifact_integrity"]
+    assert projection["bundle_integrity"]
+    assert projection["sources"][0]["title"] == "https://example.test/docs"
+
+
+def test_public_evidence_refuses_all_selection() -> None:
+    module = load_module()
+    args = module.parser().parse_args(["--all", "--include-evidence"])
+
+    with pytest.raises(module.PublicationError, match="explicit --run"):
+        module.validate_selection(args)
+
+
+def test_public_evidence_publishes_manifest_last() -> None:
+    module = load_module()
+    api = BatchApiSimulator()
+    fs = FileSystemSimulator({})
+    prepared = [
+        ("run-a", "output/report.md", b"# Report"),
+        ("run-a", "output/okf/index.md", b"index"),
+        ("run-a", module.KNOWLEDGE_MANIFEST, b"manifest"),
+    ]
+
+    changed = module.publish_prepared(
+        api,
+        fs,
+        "evalstate/public",
+        prepared,
+        {"run-a"},
+        "token",
+    )
+
+    assert changed[-1] == f"run-a/{module.KNOWLEDGE_MANIFEST}"
+    assert len(api.calls) == 2
+    assert api.calls[0][1]["add"] == [
+        (b"# Report", "run-a/output/report.md"),
+        (b"index", "run-a/output/okf/index.md"),
+    ]
+    assert api.calls[1][1]["add"] == [
+        (b"manifest", f"run-a/{module.KNOWLEDGE_MANIFEST}")
+    ]
+
+
+def test_report_update_requires_refreshing_existing_public_evidence() -> None:
+    module = load_module()
+    root = "buckets/evalstate/public/run-a"
+    fs = FileSystemSimulator(
+        {
+            f"{root}/output/report.md": b"# Old",
+            f"{root}/{module.KNOWLEDGE_MANIFEST}": b"manifest",
+        }
+    )
+
+    with pytest.raises(module.PublicationError, match="--include-evidence"):
+        module.publish_prepared(
+            BatchApiSimulator(),
+            fs,
+            "evalstate/public",
+            [("run-a", "output/report.md", b"# New")],
+            set(),
+            "token",
+        )
+
+
+def test_public_evidence_withdraws_stale_manifest_before_refresh() -> None:
+    module = load_module()
+    root = "buckets/evalstate/public/run-a"
+    fs = FileSystemSimulator(
+        {
+            f"{root}/output/report.md": b"# Old",
+            f"{root}/{module.KNOWLEDGE_MANIFEST}": b"old manifest",
+        }
+    )
+    api = BatchApiSimulator()
+
+    module.publish_prepared(
+        api,
+        fs,
+        "evalstate/public",
+        [
+            ("run-a", "output/report.md", b"# New"),
+            ("run-a", module.KNOWLEDGE_MANIFEST, b"new manifest"),
+        ],
+        {"run-a"},
+        "token",
+    )
+
+    assert api.calls[0][1] == {
+        "delete": [f"run-a/{module.KNOWLEDGE_MANIFEST}"],
+        "token": "token",
+    }
+    assert api.calls[-1][1]["add"] == [
+        (b"new manifest", f"run-a/{module.KNOWLEDGE_MANIFEST}")
+    ]
+
+
+def test_public_evidence_publication_is_idempotent() -> None:
+    module = load_module()
+    fs = FileSystemSimulator({})
+    api = ApplyingBatchApiSimulator(fs)
+    report = b"# Report\n\n[Docs](https://example.test/docs)\n"
+    prepared = [("run-a", "output/report.md", report)]
+    prepared.extend(
+        module.prepare_public_evidence(
+            prepared,
+            "evalstate/research-agent",
+        )
+    )
+
+    first = module.publish_prepared(
+        api,
+        fs,
+        "evalstate/public",
+        prepared,
+        {"run-a"},
+        "token",
+    )
+    api.calls.clear()
+    second = module.publish_prepared(
+        api,
+        fs,
+        "evalstate/public",
+        prepared,
+        {"run-a"},
+        "token",
+    )
+
+    assert first
+    assert second == []
+    assert api.calls == []
 
 
 def test_cli_requires_explicit_run_selection() -> None:

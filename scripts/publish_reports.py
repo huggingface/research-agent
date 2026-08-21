@@ -6,17 +6,24 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import io
 import json
 import re
 import sys
+import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 from huggingface_hub import HfApi, HfFileSystem, Volume, get_token
 from huggingface_hub.errors import BucketNotFoundError, RepositoryNotFoundError
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from research.okf_compiler import build_public_okf_release
 
 SOURCE_BUCKET = "evalstate/research-agent"
 PUBLIC_BUCKET = "evalstate/researcher-reports-public"
@@ -26,6 +33,24 @@ MOUNT_PATH = "/research"
 SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 SAFE_MEDIA = {".css", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}
 HF_TOKEN = re.compile(rb"hf_[A-Za-z0-9]{20,}")
+HF_TOKEN_TEXT = re.compile(r"hf_[A-Za-z0-9]{20,}")
+URL = re.compile(r"(?:https?|hf)://[^\s<>\"'`]+", re.IGNORECASE)
+CSS_ESCAPE = re.compile(
+    r"\\([0-9A-Fa-f]{1,6})(?:\r\n|[ \t\r\n\f])?|\\([^\r\n\f0-9A-Fa-f])"
+)
+SENSITIVE_QUERY_KEYS = {
+    "access_token",
+    "api_key",
+    "apikey",
+    "code",
+    "credential",
+    "key",
+    "secret",
+    "signature",
+    "sig",
+    "token",
+}
+KNOWLEDGE_MANIFEST = "scratch/knowledge/manifest.json"
 
 
 class PublicationError(RuntimeError):
@@ -138,6 +163,7 @@ def public_bytes(
 ) -> bytes:
     with fs.open(artifact.source_path, "rb") as source:
         content = source.read()
+    suffix = PurePosixPath(artifact.relative_path).suffix.lower()
     if artifact.relative_path in {"output/report.md", "output/report.html"}:
         content = (
             content.replace(
@@ -153,7 +179,18 @@ def public_bytes(
                 f"huggingface.co/buckets/{destination_bucket}".encode(),
             )
         )
-    if f"huggingface.co/buckets/{source_bucket}".encode() in content:
+        _validate_public_content(
+            content,
+            source_bucket,
+            f"{artifact.run_id}/{artifact.relative_path}",
+        )
+    elif suffix in {".css", ".svg"}:
+        _validate_public_content(
+            content,
+            source_bucket,
+            f"{artifact.run_id}/{artifact.relative_path}",
+        )
+    elif source_bucket.encode() in content:
         raise PublicationError(
             f"{artifact.run_id}/{artifact.relative_path} still references the "
             "private source bucket."
@@ -175,14 +212,103 @@ def public_bytes(
 
 
 def _references_private_okf(content: bytes) -> bool:
-    text = html.unescape(content.decode("utf-8", errors="ignore"))
-    while True:
-        decoded = unquote(text)
-        if decoded == text:
-            break
-        text = decoded
+    text = _decoded_text(content)
     normalized = re.sub(r"/+", "/", text.replace("\\", "/").lower())
     return bool(re.search(r"(?:^|/)output/okf(?:\.zip|/)", normalized))
+
+
+def _decoded_text(content: bytes) -> str:
+    text = content.decode("utf-8", errors="ignore")
+    while True:
+        decoded = _decode_css_escapes(unquote(html.unescape(text)))
+        if decoded == text:
+            return text
+        text = decoded
+
+
+def _decode_css_escapes(value: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        if escaped := match.group(1):
+            codepoint = int(escaped, 16)
+            return (
+                chr(codepoint)
+                if codepoint and codepoint <= 0x10FFFF
+                else "\N{REPLACEMENT CHARACTER}"
+            )
+        return match.group(2)
+
+    return CSS_ESCAPE.sub(replace, value)
+
+
+def _validate_public_content(
+    content: bytes,
+    source_bucket: str,
+    label: str,
+) -> None:
+    text = _decoded_text(content)
+    if source_bucket.casefold() in text.replace("\\", "/").casefold():
+        raise PublicationError(f"{label} still references the private source bucket.")
+    if HF_TOKEN_TEXT.search(text):
+        raise PublicationError(f"{label} looks like it contains a Hugging Face token.")
+    for match in URL.finditer(text):
+        raw = match.group().rstrip(".,;:!?)]}")
+        parsed = urlsplit(raw)
+        if parsed.username or parsed.password:
+            raise PublicationError(f"{label} contains URL credentials.")
+        keys = {
+            unquote(part.partition("=")[0]).strip().casefold()
+            for part in re.split(r"[&;]", parsed.query)
+            if part
+        }
+        if keys & SENSITIVE_QUERY_KEYS:
+            raise PublicationError(f"{label} contains a sensitive URL query.")
+
+
+def prepare_public_evidence(
+    prepared: list[tuple[str, str, bytes]],
+    source_bucket: str,
+) -> list[tuple[str, str, bytes]]:
+    reports = {
+        run_id: content
+        for run_id, relative_path, content in prepared
+        if relative_path == "output/report.md"
+    }
+    result: list[tuple[str, str, bytes]] = []
+    for run_id, report in sorted(reports.items()):
+        try:
+            release = build_public_okf_release(report, workspace_id=run_id)
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise PublicationError(
+                f"{run_id}/output/report.md could not produce public evidence."
+            ) from exc
+        _validate_public_evidence(release, source_bucket)
+        result.extend(
+            (run_id, relative_path, content)
+            for relative_path, content in sorted(release.items())
+        )
+    return result
+
+
+def _validate_public_evidence(
+    release: dict[str, bytes],
+    source_bucket: str,
+) -> None:
+    values = [
+        content
+        for path, content in release.items()
+        if path != "output/okf.zip"
+    ]
+    try:
+        with zipfile.ZipFile(io.BytesIO(release["output/okf.zip"])) as archive:
+            values.extend(archive.read(name) for name in archive.namelist())
+    except (KeyError, zipfile.BadZipFile) as exc:
+        raise PublicationError("Generated public evidence bundle was invalid.") from exc
+    for content in values:
+        _validate_public_content(content, source_bucket, "Generated public evidence")
+        if HF_TOKEN.search(content):
+            raise PublicationError(
+                "Generated public evidence looks like it contains a Hugging Face token."
+            )
 
 
 def artifact_changed(
@@ -208,6 +334,68 @@ def batch_upload(
 ) -> None:
     if additions:
         api.batch_bucket_files(bucket_id, add=additions, token=token)
+
+
+def publish_prepared(
+    api: HfApi,
+    fs: HfFileSystem,
+    bucket_id: str,
+    prepared: list[tuple[str, str, bytes]],
+    evidence_runs: set[str],
+    token: str,
+) -> list[str]:
+    root = bucket_path(bucket_id)
+    regular: list[tuple[bytes, str]] = []
+    manifests: dict[str, tuple[bytes, str, bool]] = {}
+    changed_runs: set[str] = set()
+    for run_id, relative_path, content in prepared:
+        relative_destination = f"{run_id}/{relative_path}"
+        destination = f"{root}/{relative_destination}"
+        changed = artifact_changed(fs, content, destination)
+        if relative_path == KNOWLEDGE_MANIFEST:
+            manifests[run_id] = (content, relative_destination, changed)
+            continue
+        if changed:
+            if (
+                relative_path == "output/report.md"
+                and run_id not in evidence_runs
+                and _exists(fs, f"{root}/{run_id}/{KNOWLEDGE_MANIFEST}")
+            ):
+                raise PublicationError(
+                    f"{run_id} already has public evidence; republish it with "
+                    "--include-evidence."
+                )
+            regular.append((content, relative_destination))
+            if run_id in evidence_runs:
+                changed_runs.add(run_id)
+
+    stale_manifests = [
+        f"{run_id}/{KNOWLEDGE_MANIFEST}"
+        for run_id in sorted(changed_runs)
+        if _exists(fs, f"{root}/{run_id}/{KNOWLEDGE_MANIFEST}")
+    ]
+    if stale_manifests:
+        api.batch_bucket_files(bucket_id, delete=stale_manifests, token=token)
+    batch_upload(api, bucket_id, regular, token)
+
+    manifest_additions = [
+        (content, destination)
+        for run_id, (content, destination, changed) in sorted(manifests.items())
+        if changed or run_id in changed_runs
+    ]
+    batch_upload(api, bucket_id, manifest_additions, token)
+    return [
+        destination
+        for _, destination in [*regular, *manifest_additions]
+    ]
+
+
+def _exists(fs: HfFileSystem, path: str) -> bool:
+    try:
+        fs.info(path)
+    except FileNotFoundError:
+        return False
+    return True
 
 
 def ensure_public_bucket(api: HfApi, bucket_id: str, token: str) -> bool:
@@ -342,11 +530,24 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Create/update public resources; otherwise perform a dry run.",
     )
+    result.add_argument(
+        "--include-evidence",
+        action="store_true",
+        help="Generate a public-safe OKF release from sanitized report Markdown.",
+    )
     return result
+
+
+def validate_selection(args: argparse.Namespace) -> None:
+    if args.include_evidence and args.all:
+        raise PublicationError(
+            "Public evidence requires explicit --run selections; --all is refused."
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    validate_selection(args)
     token = get_token()
     if not token:
         raise PublicationError("Log in with `hf auth login` before publishing.")
@@ -355,15 +556,18 @@ def main(argv: list[str] | None = None) -> int:
     artifacts = discover_artifacts(fs, args.source, args.runs if not args.all else None)
     prepared = [
         (
-            artifact,
+            artifact.run_id,
+            artifact.relative_path,
             public_bytes(fs, artifact, args.source, args.destination),
         )
         for artifact in artifacts
     ]
     runs = sorted({artifact.run_id for artifact in artifacts})
-    total = sum(len(content) for _, content in prepared)
+    if args.include_evidence:
+        prepared.extend(prepare_public_evidence(prepared, args.source))
+    total = sum(len(content) for _, _, content in prepared)
     mode = "PUBLISH" if args.publish else "DRY RUN"
-    print(f"{mode}: {len(runs)} runs, {len(artifacts)} files, {total:,} bytes")
+    print(f"{mode}: {len(runs)} runs, {len(prepared)} files, {total:,} bytes")
     print(f"  source:      hf://buckets/{args.source}")
     print(f"  destination: hf://buckets/{args.destination}")
     print(f"  archive:     https://huggingface.co/spaces/{args.space}")
@@ -374,14 +578,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     created_bucket = ensure_public_bucket(api, args.destination, token)
-    additions: list[tuple[bytes, str]] = []
-    for artifact, content in prepared:
-        relative_destination = f"{artifact.run_id}/{artifact.relative_path}"
-        destination = f"{bucket_path(args.destination)}/{relative_destination}"
-        if artifact_changed(fs, content, destination):
-            additions.append((content, relative_destination))
-    batch_upload(api, args.destination, additions, token)
-    for _, destination in additions:
+    changed = publish_prepared(
+        api,
+        fs,
+        args.destination,
+        prepared,
+        set(runs) if args.include_evidence else set(),
+        token,
+    )
+    for destination in changed:
         print(f"  copied {destination}")
     created_space = ensure_public_space(
         api,
@@ -391,7 +596,7 @@ def main(argv: list[str] | None = None) -> int:
         token=token,
     )
     print(
-        f"Published {len(runs)} runs; {len(additions)} files changed "
+        f"Published {len(runs)} runs; {len(changed)} files changed "
         f"(bucket {'created' if created_bucket else 'reused'}, "
         f"Space {'created' if created_space else 'reused'})."
     )

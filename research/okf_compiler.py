@@ -23,6 +23,7 @@ from .app_jobs import ResearchJob
 
 OKF_VERSION = "0.2"
 COMPILER_ACTOR = "research-agent/okf-compiler-v1"
+PUBLIC_COMPILER_ACTOR = "research-agent/public-okf-compiler-v1"
 EVIDENCE_PATH = "scratch/research/evidence.json"
 KNOWLEDGE_MANIFEST = "scratch/knowledge/manifest.json"
 MAX_REPORT_BYTES = 2_000_000
@@ -149,43 +150,20 @@ def compile_okf_bundle(
     additions.append((archive, f"{workspace}/output/okf.zip"))
     api.batch_bucket_files(bucket_id, add=additions, token=auth.token)
 
-    manifest = {
-        "schema_version": 1,
-        "stage": "knowledge",
-        "status": "complete",
-        "okf_version": OKF_VERSION,
-        "generated": {
+    manifest = _knowledge_manifest(
+        files,
+        metadata,
+        archive,
+        generated={
             "by": COMPILER_ACTOR,
             "at": _timestamp(generated_at),
         },
-        "source_report_sha256": metadata["report_sha256"],
-        "bundle_sha256": bundle_sha256,
-        "source_count": metadata["source_count"],
-        "citation_count": metadata["citation_count"],
-        "warnings": metadata["warnings"],
-        "artifacts": [
-            {
-                "path": f"output/okf/{path}",
-                "media_type": "text/markdown",
-                "role": "index" if path.endswith("index.md") else "knowledge",
-                "sha256": hashlib.sha256(content).hexdigest(),
-            }
-            for path, content in sorted(files.items())
-        ]
-        + [
-            {
-                "path": "output/okf.zip",
-                "media_type": "application/zip",
-                "role": "bundle",
-                "sha256": bundle_sha256,
-            }
-        ],
-    }
+    )
     api.batch_bucket_files(
         bucket_id,
         add=[
             (
-                (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode(),
+                manifest,
                 f"{workspace}/{KNOWLEDGE_MANIFEST}",
             )
         ],
@@ -215,6 +193,8 @@ def build_okf_files(
     report_sha256: str,
     evidence_bytes: bytes | None = None,
     generated_at: datetime | None = None,
+    generated_by: str = COMPILER_ACTOR,
+    include_generated_at: bool = True,
 ) -> tuple[dict[str, bytes], dict[str, Any]]:
     """Build a conformant, bounded OKF bundle entirely in memory."""
     report_bytes = report.encode()
@@ -235,6 +215,9 @@ def build_okf_files(
     uncited = sorted(source_ids - cited)
     if uncited:
         warnings.append("Evidence sources not cited in report: " + ", ".join(uncited))
+    generated = {"by": generated_by}
+    if include_generated_at:
+        generated["at"] = _timestamp(generated_at)
 
     report_title = _report_title(report) or title.strip() or "Research Brief"
     report_description = _report_description(report, description)
@@ -244,10 +227,7 @@ def build_okf_files(
         "description": report_description,
         "tags": ["research"],
         "status": "draft",
-        "generated": {
-            "by": COMPILER_ACTOR,
-            "at": _timestamp(generated_at),
-        },
+        "generated": generated,
         "sources": sources,
         "x_research_agent": {
             "workspace_id": workspace_id,
@@ -261,10 +241,7 @@ def build_okf_files(
         "description": "Source records captured from the canonical research report.",
         "tags": ["research", "evidence"],
         "status": "draft",
-        "generated": {
-            "by": COMPILER_ACTOR,
-            "at": _timestamp(generated_at),
-        },
+        "generated": generated,
         "sources": sources,
         "x_research_agent": {
             "workspace_id": workspace_id,
@@ -293,6 +270,39 @@ def build_okf_files(
         "citation_count": len(cited & source_ids),
         "warnings": warnings,
     }
+
+
+def build_public_okf_release(
+    report_bytes: bytes,
+    *,
+    workspace_id: str,
+) -> dict[str, bytes]:
+    """Build a deterministic public OKF release from sanitized Markdown only."""
+    report = report_bytes.decode("utf-8")
+    report_sha256 = hashlib.sha256(report_bytes).hexdigest()
+    archive_time = datetime(1980, 1, 1, tzinfo=UTC)
+    files, metadata = build_okf_files(
+        report,
+        title="",
+        description="",
+        workspace_id=workspace_id,
+        report_sha256=report_sha256,
+        generated_at=archive_time,
+        generated_by=PUBLIC_COMPILER_ACTOR,
+        include_generated_at=False,
+    )
+    archive = _zip_bundle(files, archive_time)
+    release = {
+        f"output/okf/{path}": content for path, content in sorted(files.items())
+    }
+    release["output/okf.zip"] = archive
+    release[KNOWLEDGE_MANIFEST] = _knowledge_manifest(
+        files,
+        metadata,
+        archive,
+        generated={"by": PUBLIC_COMPILER_ACTOR},
+    )
+    return release
 
 
 def _load_evidence(
@@ -685,6 +695,46 @@ def _validate_document(path: str, content: bytes) -> None:
     ids = [source.get("id") for source in sources if isinstance(source, dict)]
     if len(ids) != len(set(ids)):
         raise ValueError(f"OKF concept has duplicate source IDs: {path}")
+
+
+def _knowledge_manifest(
+    files: dict[str, bytes],
+    metadata: dict[str, Any],
+    archive: bytes,
+    *,
+    generated: dict[str, str],
+) -> bytes:
+    bundle_sha256 = hashlib.sha256(archive).hexdigest()
+    manifest = {
+        "schema_version": 1,
+        "stage": "knowledge",
+        "status": "complete",
+        "okf_version": OKF_VERSION,
+        "generated": generated,
+        "source_report_sha256": metadata["report_sha256"],
+        "bundle_sha256": bundle_sha256,
+        "source_count": metadata["source_count"],
+        "citation_count": metadata["citation_count"],
+        "warnings": metadata["warnings"],
+        "artifacts": [
+            {
+                "path": f"output/okf/{path}",
+                "media_type": "text/markdown",
+                "role": "index" if path.endswith("index.md") else "knowledge",
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+            for path, content in sorted(files.items())
+        ]
+        + [
+            {
+                "path": "output/okf.zip",
+                "media_type": "application/zip",
+                "role": "bundle",
+                "sha256": bundle_sha256,
+            }
+        ],
+    }
+    return (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
 
 
 def _zip_bundle(files: dict[str, bytes], generated_at: datetime) -> bytes:

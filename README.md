@@ -314,6 +314,19 @@ Publish it:
 python scripts/publish_reports.py --run <run-id> --publish
 ```
 
+Publish a regenerated public-safe evidence bundle with it:
+
+```bash
+python scripts/publish_reports.py \
+  --run <run-id> \
+  --include-evidence \
+  --publish
+```
+
+Public evidence requires explicit run selection. It is rebuilt deterministically
+from the sanitized public Markdown; private evidence JSON, private OKF files, and
+private completion manifests are never copied.
+
 The public archive mounts only the public bucket and does so read-only.
 
 ## Build and deploy
